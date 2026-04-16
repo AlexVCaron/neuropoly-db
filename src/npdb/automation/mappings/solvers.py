@@ -48,7 +48,7 @@ def load_static_mappings(resource_path: Optional[Path] = None) -> Dict[str, Any]
         Dictionary of mappings with context and column definitions.
     """
     if resource_path is None:
-        resource_path = Path(__file__).parent.parent / \
+        resource_path = Path(__file__).parent.parent.parent / \
             "resources" / "phenotype_mappings.json"
 
     if not resource_path.exists():

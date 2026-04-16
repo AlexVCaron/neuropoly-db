@@ -4,11 +4,10 @@ Download handling for annotation tool exports.
 Detects, waits for, and manages file downloads from browser.
 Supports headless and headed modes with different download behaviors.
 """
-
 import asyncio
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
-from datetime import datetime, timedelta
+from typing import Dict, Optional
 
 
 class DownloadHandler:

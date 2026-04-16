@@ -7,6 +7,7 @@ break existing CLI functionality.
 
 from typer.testing import CliRunner
 from npdb.cli import npdb
+from npdb.annotation import AnnotationConfig
 
 
 runner = CliRunner()
@@ -121,13 +122,13 @@ class TestCLINoRegressions:
 
     def test_annotation_config_available_in_cli(self):
         """Test that AnnotationConfig is available in CLI."""
-        from npdb.cli import AnnotationManager, AnnotationConfig
-        assert AnnotationManager is not None
+        from npdb.managers.neurobagel import NeurobagelAnnotator
+        assert NeurobagelAnnotator is not None
         assert AnnotationConfig is not None
 
         # Can create instances
         config = AnnotationConfig(mode="manual")
         assert config.mode == "manual"
 
-        manager = AnnotationManager(config)
+        manager = NeurobagelAnnotator(config)
         assert manager.config.mode == "manual"

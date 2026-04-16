@@ -10,14 +10,15 @@ are intelligently resolved:
 import json
 import tempfile
 from pathlib import Path
-from npdb.managers.duplicate_resolver import resolve_phenotype_duplicates
+
+from npdb.annotation.duplicates import resolve_phenotype_duplicates
 
 
 def test_duplicate_resolution_with_benchmark_data():
     """
     Test duplicate resolution using flat-format test data.
     Tests resolution of 'participant_id' and 'source_id' both mapping to nb:ParticipantID.
-    
+
     Expected behavior:
     - participant_id: primary, stays as-is
     - source_id: alternate, renamed to alt_participant_id in TSV, removed from JSON
@@ -82,7 +83,8 @@ sub-003	source_003	28	M"""
         print(f"  TSV columns: {original_header}")
         print(f"  Annotations: {list(original_annotations.keys())}")
         for col, mapping in original_annotations.items():
-            print(f"    {col} → {mapping['variable']} (confidence {mapping['confidence']:.2f})")
+            print(
+                f"    {col} → {mapping['variable']} (confidence {mapping['confidence']:.2f})")
 
         # Run duplicate resolver
         resolve_phenotype_duplicates(
@@ -102,7 +104,8 @@ sub-003	source_003	28	M"""
         print(f"  TSV columns: {resolved_header}")
         print(f"  Annotations: {list(resolved_annotations.keys())}")
         for col, mapping in resolved_annotations.items():
-            print(f"    {col} → {mapping['variable']} (confidence {mapping['confidence']:.2f})")
+            print(
+                f"    {col} → {mapping['variable']} (confidence {mapping['confidence']:.2f})")
 
         # Verify results
         print(f"\n→ Verification:")

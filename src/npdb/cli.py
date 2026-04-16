@@ -9,10 +9,10 @@ from typing import Optional
 
 from npdb.managers import (
     DataNeuroPolyMTL,
-    BagelNeuroPolyMTL,
-    AnnotationManager,
-    AnnotationConfig,
+    BagelNeuroPolyMTL
 )
+from npdb.managers.neurobagel import NeurobagelAnnotator
+from npdb.annotation import AnnotationConfig
 
 
 OPTION_GROUP_NAMES = {
@@ -231,7 +231,7 @@ def gitea2bagel(
                     phenotype_dictionary=phenotype_dict
                 )
 
-                annotation_manager = AnnotationManager(annotation_config)
+                annotation_manager = NeurobagelAnnotator(annotation_config)
 
                 # Execute annotation automation based on mode
                 success = asyncio.run(annotation_manager.execute(

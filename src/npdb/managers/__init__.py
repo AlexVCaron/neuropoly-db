@@ -1,25 +1,12 @@
 
-
-import base64
 import json
 import os
 import subprocess
 import tempfile
 
-from npdb.managers.gitea import GiteaManager, OrganizationMixin
+from npdb.managers.neurogitea import OrganizationMixin
 from npdb.managers.neurobagel import BagelMixin, NeurobagelManager
-from npdb.managers.annotation_automation import AnnotationManager, AnnotationConfig
-from npdb.managers.phenotype_mappings import load_static_mappings, load_user_mappings, merge_mappings
-from npdb.managers.provenance import ProvenanceReport, add_column_provenance, add_warning, save_provenance
-from npdb.managers.fuzzy_matcher import FuzzyMatcher, ColumnMatcher
-from npdb.managers.mapping_resolver import MappingResolver, ResolvedMapping
-from npdb.managers.browser_session import BrowserSession
-from npdb.managers.annotation_steps import AnnotationStep, StepNavigator, AnnotationUIPatterns
-from npdb.managers.ui_interaction import (
-    ColumnAnnotationData, ValueAnnotationData, FormatAnnotationData,
-    AnnotationUIBuilder, FormFillerActions
-)
-from npdb.managers.graph_updater import GraphUpdater
+from npdb.external.neurogitea.gitea import GiteaManager
 
 
 class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
