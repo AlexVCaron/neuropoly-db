@@ -16,6 +16,7 @@ from npdb.annotation.standardize import (
     add_missing_standard_columns,
     apply_header_map,
     generate_participants_json,
+    header_map_variables,
     load_header_map,
     rename_tsv_headers,
     validate_bids_sidecar,
@@ -62,8 +63,14 @@ class BIDSStandardizer(AnnotationManager):
 
         try:
             # Step 0 (optional): Apply user-supplied header translation map
+            pre_renames = {}
+            header_map_keys = set()
+            hmap_variables: set[str] = set()
+            hmap = None
             if self.config.header_map:
                 hmap = load_header_map(self.config.header_map)
+                header_map_keys = set(hmap.keys())
+                hmap_variables = header_map_variables(hmap)
                 pre_renames = apply_header_map(tsv_path, hmap, dry_run=dry_run)
                 if pre_renames:
                     print(
@@ -84,9 +91,10 @@ class BIDSStandardizer(AnnotationManager):
                 f"✓ Resolved {len(annotations_dict)}/{len(column_names)} columns"
             )
 
-            # Step 3: Rename headers
+            # Step 3: Rename headers (protect header-map keys from override)
             rename_map = rename_tsv_headers(
-                tsv_path, resolved_mappings, dry_run=dry_run
+                tsv_path, resolved_mappings, dry_run=dry_run,
+                protected_columns=header_map_keys,
             )
             if rename_map:
                 print(f"✓ Renamed {len(rename_map)} column headers")
@@ -95,11 +103,24 @@ class BIDSStandardizer(AnnotationManager):
 
             # Step 4: Add missing standard columns
             added = add_missing_standard_columns(
-                tsv_path, self.resolver.mappings, dry_run=dry_run
+                tsv_path, self.resolver.mappings, dry_run=dry_run,
+                extra_covered_variables=hmap_variables or None,
             )
             if added:
                 print(
                     f"✓ Added {len(added)} missing standard columns: {added}")
+
+            # In dry-run mode, the TSV was not modified by rename/add steps.
+            # Compute the effective column list so generate_participants_json
+            # produces output matching what would actually be written.
+            effective_columns = None
+            if dry_run:
+                # Apply header-map renames, then resolver renames, then added cols
+                effective_columns = [
+                    rename_map.get(pre_renames.get(c, c),
+                                   pre_renames.get(c, c))
+                    for c in column_names
+                ] + (added or [])
 
             # Step 5: Generate participants.json
             existing_json = bids_root / "participants.json"
@@ -110,6 +131,8 @@ class BIDSStandardizer(AnnotationManager):
                 existing_json_path=existing_json if existing_json.exists() else None,
                 keep_annotations=keep_annotations,
                 dry_run=dry_run,
+                column_names=effective_columns,
+                header_map=hmap,
             )
 
             if not dry_run:
@@ -131,6 +154,12 @@ class BIDSStandardizer(AnnotationManager):
                 provenance_path = bids_root / "participants_provenance.json"
                 save_provenance(self.provenance, provenance_path)
                 print(f"✓ Saved provenance: {provenance_path}")
+            else:
+                # Dry-run: still report validation warnings
+                if not keep_annotations:
+                    _, warnings = validate_bids_sidecar(sidecar)
+                    for w in warnings:
+                        print(f"  ⚠ {w}")
 
             return True
 
