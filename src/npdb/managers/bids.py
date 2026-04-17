@@ -102,13 +102,15 @@ class BIDSStandardizer(AnnotationManager):
                     print(f"  {old} → {new}")
 
             # Step 4: Add missing standard columns
-            added = add_missing_standard_columns(
-                tsv_path, self.resolver.mappings, dry_run=dry_run,
-                extra_covered_variables=hmap_variables or None,
-            )
-            if added:
-                print(
-                    f"✓ Added {len(added)} missing standard columns: {added}")
+            added = None
+            if not self.config.no_new_columns:
+                added = add_missing_standard_columns(
+                    tsv_path, self.resolver.mappings, dry_run=dry_run,
+                    extra_covered_variables=hmap_variables or None,
+                )
+                if added:
+                    print(
+                        f"✓ Added {len(added)} missing standard columns: {added}")
 
             # In dry-run mode, the TSV was not modified by rename/add steps.
             # Compute the effective column list so generate_participants_json

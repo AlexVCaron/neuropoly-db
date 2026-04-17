@@ -330,6 +330,12 @@ def standardize_bids(
         help="Print changes to terminal without writing files.",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
+    no_new_columns: bool = typer.Option(
+        False,
+        "--no-new-columns",
+        help="Don't add missing standard columns (e.g., age, sex).",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
     keep_annotations: bool = typer.Option(
         False,
         "--keep-annotations",
@@ -427,6 +433,7 @@ def standardize_bids(
             dry_run=dry_run,
             keep_annotations=keep_annotations,
             header_map=header_map,
+            no_new_columns=no_new_columns,
         )
 
         standardizer = BIDSStandardizer(config)
