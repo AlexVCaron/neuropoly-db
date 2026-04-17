@@ -9,13 +9,13 @@
       "variable": "nb:ParticipantID",
       "confidence": 1.0,
       "variableType": "Identifier",
-      "aliases": ["partid", "id", "subject_id", "subid"]
+      "aliases": ["partid", "id", "subject_id", "subid", "sub_id"]
     },
     "sub_id": {
       "variable": "nb:ParticipantID",
       "confidence": 0.95,
       "variableType": "Identifier",
-      "aliases": ["sub-id"]
+      "aliases": ["sub-id", "partid", "id", "subject_id", "subid", "participant_id"]
     },
     "session_id": {
       "variable": "nb:SessionID",

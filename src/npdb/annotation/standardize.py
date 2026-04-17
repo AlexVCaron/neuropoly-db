@@ -53,22 +53,25 @@ _VARIABLE_UNITS = {
 }
 
 
-def load_header_map(path: Path) -> Dict[str, List[str]]:
+def load_header_map(path: Path) -> Dict[str, Dict[str, Any]]:
     """
     Load a header translation map from a JSON file.
 
     Expected format::
 
         {
-          "desired_name": ["variant1", "variant2"],
-          "other_name": ["variant3"]
+          "desired_name": {
+            "aliases": ["variant1", "variant2"],
+            "variable": "nb:SomeVariable"   // optional
+          }
         }
 
     Args:
         path: Path to the JSON file.
 
     Returns:
-        Dict mapping desired output header names to lists of input variants.
+        Dict mapping desired output header names to entry dicts containing
+        at least ``"aliases"`` (list of strings) and optionally ``"variable"``.
 
     Raises:
         FileNotFoundError: If the file does not exist.
@@ -87,15 +90,25 @@ def load_header_map(path: Path) -> Dict[str, List[str]]:
         if not isinstance(key, str):
             raise ValueError(
                 f"Header map keys must be strings, got: {type(key).__name__}")
-        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        if not isinstance(value, dict):
             raise ValueError(
-                f"Header map values must be lists of strings, invalid value for key '{key}'"
+                f"Header map values must be objects, invalid value for key '{key}'"
+            )
+        aliases = value.get("aliases")
+        if not isinstance(aliases, list) or not all(isinstance(v, str) for v in aliases):
+            raise ValueError(
+                f"'aliases' must be a list of strings for key '{key}'"
+            )
+        variable = value.get("variable")
+        if variable is not None and not isinstance(variable, str):
+            raise ValueError(
+                f"'variable' must be a string for key '{key}'"
             )
 
     return data
 
 
-def validate_header_map_keys(header_map: Dict[str, List[str]], valid_keys: Set[str]) -> None:
+def validate_header_map_keys(header_map: Dict[str, Dict[str, Any]], valid_keys: Set[str]) -> None:
     """
     Validate that all keys in a header map belong to a set of valid keys.
 
@@ -114,23 +127,40 @@ def validate_header_map_keys(header_map: Dict[str, List[str]], valid_keys: Set[s
         )
 
 
+def header_map_variables(header_map: Dict[str, Dict[str, Any]]) -> Set[str]:
+    """
+    Extract the set of Neurobagel variable IRIs declared in a header map.
+
+    Args:
+        header_map: The header translation map.
+
+    Returns:
+        Set of variable IRI strings (entries without ``"variable"`` are skipped).
+    """
+    return {
+        entry["variable"]
+        for entry in header_map.values()
+        if "variable" in entry
+    }
+
+
 def apply_header_map(
     tsv_path: Path,
-    header_map: Dict[str, List[str]],
+    header_map: Dict[str, Dict[str, Any]],
     dry_run: bool = False,
 ) -> Dict[str, str]:
     """
     Rename TSV column headers using a user-supplied translation map.
 
     For each TSV column, checks (case-insensitive) whether it appears in any
-    key's variant list.  Matching columns are renamed to the key.
+    key's aliases list.  Matching columns are renamed to the key.
 
     This runs as a **prior stage** before the resolver/matcher, so the
     resolver sees already-clean header names.
 
     Args:
         tsv_path: Path to participants.tsv.
-        header_map: Mapping of ``{desired_name: [variant1, variant2, ...]}``.
+        header_map: Mapping of ``{desired_name: {"aliases": [...], ...}}``.
         dry_run: If True, print changes without writing.
 
     Returns:
@@ -142,8 +172,8 @@ def apply_header_map(
     """
     # Build reverse lookup: lowered variant -> desired key
     variant_to_key: Dict[str, str] = {}
-    for desired, variants in header_map.items():
-        for v in variants:
+    for desired, entry in header_map.items():
+        for v in entry["aliases"]:
             low = v.lower()
             if low in variant_to_key and variant_to_key[low] != desired:
                 raise ValueError(
@@ -202,6 +232,7 @@ def rename_tsv_headers(
     tsv_path: Path,
     resolved_mappings: List[ResolvedMapping],
     dry_run: bool = False,
+    protected_columns: Optional[Set[str]] = None,
 ) -> Dict[str, str]:
     """
     Rename TSV column headers based on resolved mappings.
@@ -213,15 +244,20 @@ def rename_tsv_headers(
         tsv_path: Path to participants.tsv.
         resolved_mappings: List of ResolvedMapping from MappingResolver.
         dry_run: If True, print changes without writing.
+        protected_columns: Column names that must not be renamed (e.g.
+            header-map keys that the user explicitly chose).
 
     Returns:
         Dict mapping old_header -> new_header for columns that were renamed.
     """
     rename_map: Dict[str, str] = {}
+    protected = protected_columns or set()
 
     # Build rename map from resolved mappings
     for mapping in resolved_mappings:
         if mapping.source == "unresolved":
+            continue
+        if mapping.column_name in protected:
             continue
         # The canonical name is the key in phenotype_mappings.json that matched.
         # For static matches, column_name IS the key; for fuzzy, we need the matched key.
@@ -286,6 +322,7 @@ def add_missing_standard_columns(
     tsv_path: Path,
     mappings_registry: Dict[str, Any],
     dry_run: bool = False,
+    extra_covered_variables: Optional[Set[str]] = None,
 ) -> List[str]:
     """
     Add missing standard columns (from phenotype_mappings) to participants.tsv.
@@ -293,15 +330,27 @@ def add_missing_standard_columns(
     Compares post-rename columns against all keys in mappings_registry["mappings"]
     and appends missing columns filled with 'n/a'.
 
+    A standard column is considered *already covered* if any existing column
+    maps to the same ``variable`` (e.g. ``nb:ParticipantID``).  This prevents
+    adding ``sub_id`` when ``participant_id`` is already present.  However,
+    if the input data already contains multiple columns for the same variable
+    they are left untouched (duplicate handling is deferred to annotation modes).
+
+    Variables listed in *extra_covered_variables* (e.g. from a header-map) are
+    also treated as covered.
+
     Args:
         tsv_path: Path to participants.tsv (already renamed).
         mappings_registry: Full phenotype_mappings dict (with "mappings" key).
         dry_run: If True, print which columns would be added without writing.
+        extra_covered_variables: Additional Neurobagel variable IRIs that should
+            be considered already present (e.g. declared in a header-map).
 
     Returns:
         List of column names that were added.
     """
-    standard_columns = list(mappings_registry.get("mappings", {}).keys())
+    all_mappings = mappings_registry.get("mappings", {})
+    standard_columns = list(all_mappings.keys())
 
     with open(tsv_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
@@ -310,7 +359,27 @@ def add_missing_standard_columns(
         return []
 
     existing = lines[0].rstrip("\n").split("\t")
-    missing = [col for col in standard_columns if col not in existing]
+
+    # Build set of variables already covered by existing columns
+    covered_variables: Set[str] = set(extra_covered_variables or set())
+    for col in existing:
+        col_mapping = all_mappings.get(col)
+        if col_mapping:
+            var = col_mapping.get("variable")
+            if var:
+                covered_variables.add(var)
+
+    # A standard column is missing only if:
+    # 1. It is not already present by name, AND
+    # 2. Its variable is not already covered by another existing column
+    missing = []
+    for col in standard_columns:
+        if col in existing:
+            continue
+        col_var = all_mappings[col].get("variable", "")
+        if col_var and col_var in covered_variables:
+            continue
+        missing.append(col)
 
     if not missing:
         return []
@@ -346,6 +415,8 @@ def generate_participants_json(
     existing_json_path: Optional[Path] = None,
     keep_annotations: bool = False,
     dry_run: bool = False,
+    column_names: Optional[List[str]] = None,
+    header_map: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Generate a BIDS-compliant participants.json sidecar.
@@ -361,6 +432,11 @@ def generate_participants_json(
         existing_json_path: Optional path to existing participants.json to merge.
         keep_annotations: If True, include Neurobagel Annotations block.
         dry_run: If True, print JSON to terminal without writing.
+        column_names: If provided, use these column names instead of reading
+            from tsv_path (useful in dry-run when TSV has not been modified).
+        header_map: Optional header translation map.  When a column is a
+            header-map key with a ``"variable"`` entry, the variable's
+            phenotype mapping data is used for sidecar metadata.
 
     Returns:
         The generated sidecar dict.
@@ -372,9 +448,12 @@ def generate_participants_json(
     # the matched canonical key, not the original column name).
     resolved_by_col = {m.column_name: m for m in resolved_mappings}
 
-    # Read current column names from TSV
-    with open(tsv_path, "r", encoding="utf-8") as f:
-        current_columns = f.readline().rstrip("\n").split("\t")
+    # Read current column names from TSV, or use provided override
+    if column_names is not None:
+        current_columns = list(column_names)
+    else:
+        with open(tsv_path, "r", encoding="utf-8") as f:
+            current_columns = f.readline().rstrip("\n").split("\t")
 
     # Load existing JSON if present
     existing: Dict[str, Any] = {}
@@ -395,9 +474,18 @@ def generate_participants_json(
         # 1. Direct lookup by (post-rename) column name in phenotype_mappings
         # 2. Fallback to mapping_data carried by the ResolvedMapping (handles
         #    fuzzy matches and pre-rename column names)
+        # 3. If column is a header-map key with a declared variable, look up
+        #    the first phenotype_mappings entry sharing that variable
         mapping_data = mappings_dict.get(col, {})
         if not mapping_data and col in resolved_by_col:
             mapping_data = resolved_by_col[col].mapping_data
+        if not mapping_data and header_map and col in header_map:
+            hm_var = header_map[col].get("variable")
+            if hm_var:
+                for _mkey, _mdata in mappings_dict.items():
+                    if _mdata.get("variable") == hm_var:
+                        mapping_data = _mdata
+                        break
 
         # LongName
         if col in _VARIABLE_LONG_NAMES:

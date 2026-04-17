@@ -59,3 +59,7 @@ class AnnotationConfig(BaseModel):
         default=None,
         description="JSON file mapping desired output headers to lists of input variants"
     )
+    no_new_columns: bool = Field(
+        default=False,
+        description="Don't add missing standard columns (e.g., age, sex)"
+    )

@@ -155,19 +155,36 @@ class ColumnMatcher:
                               Must contain "mappings" key with dict of mappings.
         """
         self.mappings_registry = mappings_registry.get("mappings", {})
-        # Build comprehensive list of all known names and aliases
-        self.all_known_names = []
-        self.name_to_mapping_key = {}
+        # Build comprehensive list of all known names and aliases.
+        # When the same name/alias appears under multiple mapping keys,
+        # prefer the key with higher confidence (default 1.0), then
+        # alphabetically first on ties.
+        self.all_known_names: List[str] = []
+        self.name_to_mapping_key: Dict[str, str] = {}
+
+        # Track (confidence, key) per normalized name so we can pick the best
+        _name_priority: Dict[str, Tuple[float, str]] = {}
 
         for key, mapping_data in self.mappings_registry.items():
-            self.all_known_names.append(key)
-            self.name_to_mapping_key[key] = key
+            conf = mapping_data.get("confidence", 1.0)
+            names = [key] + mapping_data.get("aliases", [])
+            for name in names:
+                normalized = PhenotypeMatcher.normalize_header(name)
+                existing = _name_priority.get(normalized)
+                # Keep the entry with higher confidence; on tie, alphabetically first key.
+                # Tuple (-conf, key) is compared: lower = better (higher conf, earlier alpha).
+                if existing is None or (-conf, key) < (-existing[0], existing[1]):
+                    _name_priority[normalized] = (conf, key)
+                    self.name_to_mapping_key[name] = key
 
-            # Add aliases if present
-            if "aliases" in mapping_data:
-                for alias in mapping_data["aliases"]:
-                    self.all_known_names.append(alias)
-                    self.name_to_mapping_key[alias] = key
+        # Deduplicate all_known_names while preserving order
+        seen_normalized: set = set()
+        for key, mapping_data in self.mappings_registry.items():
+            for name in [key] + mapping_data.get("aliases", []):
+                normalized = PhenotypeMatcher.normalize_header(name)
+                if normalized not in seen_normalized:
+                    seen_normalized.add(normalized)
+                    self.all_known_names.append(name)
 
     def match_column(
         self,
