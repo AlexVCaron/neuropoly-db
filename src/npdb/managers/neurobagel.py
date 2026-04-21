@@ -197,5 +197,3 @@ class NeurobagelAnnotator(AnnotationManager):
         )
         strategy = AnnotationStrategyFactory.create(self.config)
         return await strategy.run(participants_tsv_path, output_dir, ctx)
-
-

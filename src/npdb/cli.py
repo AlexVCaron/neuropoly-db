@@ -202,7 +202,8 @@ def gitea2bagel(
         # Build domain objects via factories
         task = progress.add_task("Initializing Gitea manager...", total=None)
         try:
-            gitea_manager = GiteaManagerFactory.create_from_env(ssl_verify=verify_ssl)
+            gitea_manager = GiteaManagerFactory.create_from_env(
+                ssl_verify=verify_ssl)
         except ValueError as e:
             typer.echo(f"Error: {e}", err=True)
             raise typer.Exit(code=1)
@@ -224,9 +225,7 @@ def gitea2bagel(
         asyncio.run(facade.run(dataset, output))
 
 
-
 # ── standardize subgroup ──────────────────────────────────────────
-
 standardize = typer.Typer(
     help="Standardization tools for BIDS datasets.",
     no_args_is_help=True,

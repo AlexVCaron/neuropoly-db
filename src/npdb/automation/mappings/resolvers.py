@@ -132,7 +132,6 @@ class AIResolutionHandler(ResolutionHandler):
         return None
 
 
-
 class MappingResolver:
     """
     Resolves column headers to Neurobagel standardized variables via precedence chain.

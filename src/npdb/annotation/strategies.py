@@ -420,7 +420,8 @@ class FullAutoStrategy(AnnotationStrategy):
                     column_names = ["participant_id", "age", "sex"]
 
                 resolved = ctx.resolver.resolve_columns(column_names)
-                print(f"✓ Resolved {len(resolved)} columns (lenient thresholds)")
+                print(
+                    f"✓ Resolved {len(resolved)} columns (lenient thresholds)")
 
                 for mapping in resolved:
                     if mapping.source == "unresolved":
