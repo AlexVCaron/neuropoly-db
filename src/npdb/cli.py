@@ -6,14 +6,12 @@ import typer
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from typing import Optional
 
-from npdb.managers import (
-    DataNeuroPolyMTL,
-    BIDSStandardizer,
-)
+from npdb.managers import BIDSStandardizer
 from npdb.annotation import AnnotationConfig
 from npdb.annotation.standardize import load_header_map, validate_header_map_keys
 from npdb.automation.mappings.solvers import load_static_mappings
 from npdb.facade import DatasetConversionFacade
+from npdb.factories import GiteaManagerFactory, AnnotationConfigFactory
 
 
 OPTION_GROUP_NAMES = {
@@ -201,17 +199,16 @@ def gitea2bagel(
                     f"Error: Cannot create/access artifacts directory '{artifacts_dir}': {e}", err=True)
                 raise typer.Exit(code=1)
 
-        # Build domain objects
+        # Build domain objects via factories
         task = progress.add_task("Initializing Gitea manager...", total=None)
-        gitea_manager = DataNeuroPolyMTL(
-            os.environ.get("NP_GITEA_APP_URL"),
-            os.environ.get("NP_GITEA_APP_USER"),
-            os.environ.get("NP_GITEA_APP_TOKEN"),
-            ssl_verify=verify_ssl,
-        )
+        try:
+            gitea_manager = GiteaManagerFactory.create_from_env(ssl_verify=verify_ssl)
+        except ValueError as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(code=1)
         progress.remove_task(task)
 
-        annotation_config = AnnotationConfig(
+        annotation_config = AnnotationConfigFactory.create_from_cli_args(
             mode=mode,
             headless=headless,
             timeout=timeout,
