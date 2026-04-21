@@ -317,3 +317,61 @@ class TestEdgeCases:
 
         # Should handle without error
         assert result.column_name == long_name
+
+
+class TestChainShortCircuit:
+    """Verify that the chain short-circuits at the static handler when an exact key is present."""
+
+    def test_static_handler_short_circuits_fuzzy(self):
+        """Fuzzy handler must not be invoked when an exact static key matches."""
+        from unittest.mock import patch, MagicMock
+        from npdb.automation.mappings.resolvers import (
+            FuzzyResolutionHandler,
+            StaticResolutionHandler,
+        )
+
+        resolver = MappingResolver()
+
+        # Patch the fuzzy handler's handle method so we can detect calls.
+        fuzzy_handler = resolver._resolution_chain._next  # second node in chain
+        assert isinstance(fuzzy_handler, FuzzyResolutionHandler)
+
+        original_handle = fuzzy_handler.handle
+        call_count = []
+
+        def counting_handle(column_name, matcher):
+            call_count.append(column_name)
+            return original_handle(column_name, matcher)
+
+        fuzzy_handler.handle = counting_handle
+
+        # "participant_id" is an exact static key — fuzzy should not be reached
+        resolver.resolve_column("participant_id")
+        assert call_count == [], (
+            "FuzzyResolutionHandler.handle() should NOT be called when "
+            "StaticResolutionHandler finds an exact match"
+        )
+
+    def test_fuzzy_handler_reached_when_no_static_match(self):
+        """Fuzzy handler IS called when static lookup fails."""
+        from npdb.automation.mappings.resolvers import FuzzyResolutionHandler
+
+        resolver = MappingResolver()
+        fuzzy_handler = resolver._resolution_chain._next
+        assert isinstance(fuzzy_handler, FuzzyResolutionHandler)
+
+        call_count = []
+        original_handle = fuzzy_handler.handle
+
+        def counting_handle(column_name, matcher):
+            call_count.append(column_name)
+            return original_handle(column_name, matcher)
+
+        fuzzy_handler.handle = counting_handle
+
+        # "age_at_baseline" is not an exact static key — fuzzy should be reached
+        resolver.resolve_column("age_at_baseline")
+        assert call_count == ["age_at_baseline"], (
+            "FuzzyResolutionHandler.handle() should be called when "
+            "StaticResolutionHandler finds no exact match"
+        )

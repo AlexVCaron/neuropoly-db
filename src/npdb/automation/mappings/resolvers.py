@@ -9,6 +9,7 @@ Chains three layers of authority:
 Resolver returns per-column mapping with source and confidence tracking.
 """
 
+from abc import ABC, abstractmethod
 from typing import Dict, Optional, Any, List
 from dataclasses import dataclass
 from npdb.automation.mappings.solvers import load_static_mappings, load_user_mappings, merge_mappings
@@ -26,6 +27,112 @@ class ResolvedMapping:
     rationale: str
 
 
+# ---------------------------------------------------------------------------
+# Chain-of-Responsibility handlers
+# ---------------------------------------------------------------------------
+
+class ResolutionHandler(ABC):
+    """Abstract node in the column-resolution chain."""
+
+    def __init__(self) -> None:
+        self._next: Optional[ResolutionHandler] = None
+
+    def set_next(self, handler: "ResolutionHandler") -> "ResolutionHandler":
+        """Attach *handler* as the next node and return it (fluent API)."""
+        self._next = handler
+        return handler
+
+    @abstractmethod
+    def handle(
+        self, column_name: str, matcher: ColumnMatcher
+    ) -> Optional[ResolvedMapping]:
+        """
+        Try to resolve *column_name*.
+
+        Return a ResolvedMapping on success, or delegate to the next
+        handler (returning None if the chain is exhausted).
+        """
+        ...
+
+
+class StaticResolutionHandler(ResolutionHandler):
+    """Resolves columns via exact key lookup in the static dictionary."""
+
+    def handle(
+        self, column_name: str, matcher: ColumnMatcher
+    ) -> Optional[ResolvedMapping]:
+        mapping_data = matcher.get_mapping_data(column_name)
+        if mapping_data:
+            return ResolvedMapping(
+                column_name=column_name,
+                mapped_variable=mapping_data.get("variable", "unknown"),
+                confidence=mapping_data.get("confidence", 0.95),
+                source="static",
+                mapping_data=mapping_data,
+                rationale="Exact match in static dictionary",
+            )
+        if self._next:
+            return self._next.handle(column_name, matcher)
+        return None
+
+
+class FuzzyResolutionHandler(ResolutionHandler):
+    """Resolves columns via deterministic fuzzy matching against dict aliases."""
+
+    def __init__(
+        self,
+        exact_threshold: float = 1.0,
+        fuzzy_threshold: float = 0.75,
+    ) -> None:
+        super().__init__()
+        self.exact_threshold = exact_threshold
+        self.fuzzy_threshold = fuzzy_threshold
+
+    def handle(
+        self, column_name: str, matcher: ColumnMatcher
+    ) -> Optional[ResolvedMapping]:
+        match_result = matcher.match_column(
+            column_name,
+            exact_threshold=self.exact_threshold,
+            fuzzy_threshold=self.fuzzy_threshold,
+        )
+        if match_result:
+            mapping_key, confidence, match_source = match_result
+            mapping_data = matcher.get_mapping_data(mapping_key)
+            if mapping_data:
+                return ResolvedMapping(
+                    column_name=column_name,
+                    mapped_variable=mapping_data.get("variable", "unknown"),
+                    confidence=confidence,
+                    source="deterministic",
+                    mapping_data=mapping_data,
+                    rationale=(
+                        f"Fuzzy match: '{column_name}' → '{mapping_key}' "
+                        f"({match_source}, score {confidence:.2f})"
+                    ),
+                )
+        if self._next:
+            return self._next.handle(column_name, matcher)
+        return None
+
+
+class AIResolutionHandler(ResolutionHandler):
+    """
+    Stub for future AI-assisted resolution.
+
+    Currently always returns None (passes through the chain).
+    Wire in an AI provider here when the feature is enabled.
+    """
+
+    def handle(
+        self, column_name: str, matcher: ColumnMatcher
+    ) -> Optional[ResolvedMapping]:
+        if self._next:
+            return self._next.handle(column_name, matcher)
+        return None
+
+
+
 class MappingResolver:
     """
     Resolves column headers to Neurobagel standardized variables via precedence chain.
@@ -33,7 +140,7 @@ class MappingResolver:
     Precedence order:
     1. Static dictionary (user-supplied or built-in)
     2. Fuzzy matching against static dict keys/aliases
-    3. AI suggestions (deferred to AnnotationManager; not handled here)
+    3. AI suggestions (deferred; stub returns None today)
     """
 
     def __init__(
@@ -65,17 +172,25 @@ class MappingResolver:
         self.exact_threshold = exact_threshold
         self.fuzzy_threshold = fuzzy_threshold
 
-        # Cache resolved mappings
+        # Cache resolved mappings (_resolved_cache lives here, not on handlers)
         self._resolved_cache: Dict[str, ResolvedMapping] = {}
+
+        # Build resolution chain: static → fuzzy → ai_stub
+        _static = StaticResolutionHandler()
+        _fuzzy = FuzzyResolutionHandler(
+            exact_threshold=self.exact_threshold,
+            fuzzy_threshold=self.fuzzy_threshold,
+        )
+        _ai = AIResolutionHandler()
+        _static.set_next(_fuzzy).set_next(_ai)
+        self._resolution_chain: ResolutionHandler = _static
 
     def resolve_column(self, column_name: str) -> ResolvedMapping:
         """
-        Resolve a column header to a phenotype variable via precedence chain.
+        Resolve a column header to a phenotype variable via the handler chain.
 
-        Attempts in order:
-        1. Static dictionary (exact name match)
-        2. Fuzzy matching against dict aliases
-        3. Unresolved (deferred to AI or manual)
+        Attempts in order: static dictionary → fuzzy matching → AI stub.
+        Falls back to an "unresolved" mapping if the chain returns None.
 
         Args:
             column_name: Column header from dataset.
@@ -83,56 +198,24 @@ class MappingResolver:
         Returns:
             ResolvedMapping with source, confidence, and mapping data.
         """
-        # Check cache
         if column_name in self._resolved_cache:
             return self._resolved_cache[column_name]
 
-        # Attempt static dictionary match by exact name
-        mapping_data = self.matcher.get_mapping_data(column_name)
-        if mapping_data:
+        resolved = self._resolution_chain.handle(column_name, self.matcher)
+
+        if resolved is None:
             resolved = ResolvedMapping(
                 column_name=column_name,
-                mapped_variable=mapping_data.get("variable", "unknown"),
-                confidence=mapping_data.get("confidence", 0.95),
-                source="static",
-                mapping_data=mapping_data,
-                rationale="Exact match in static dictionary"
+                mapped_variable="",
+                confidence=0.0,
+                source="unresolved",
+                mapping_data={},
+                rationale=(
+                    f"No static or fuzzy match found for '{column_name}'; "
+                    f"requires AI suggestion or manual annotation"
+                ),
             )
-            self._resolved_cache[column_name] = resolved
-            return resolved
 
-        # Attempt fuzzy matching
-        match_result = self.matcher.match_column(
-            column_name,
-            exact_threshold=self.exact_threshold,
-            fuzzy_threshold=self.fuzzy_threshold
-        )
-
-        if match_result:
-            mapping_key, confidence, match_source = match_result
-            mapping_data = self.matcher.get_mapping_data(mapping_key)
-
-            if mapping_data:
-                resolved = ResolvedMapping(
-                    column_name=column_name,
-                    mapped_variable=mapping_data.get("variable", "unknown"),
-                    confidence=confidence,
-                    source="deterministic",
-                    mapping_data=mapping_data,
-                    rationale=f"Fuzzy match: '{column_name}' → '{mapping_key}' ({match_source}, score {confidence:.2f})"
-                )
-                self._resolved_cache[column_name] = resolved
-                return resolved
-
-        # No match found; unresolved
-        resolved = ResolvedMapping(
-            column_name=column_name,
-            mapped_variable="",
-            confidence=0.0,
-            source="unresolved",
-            mapping_data={},
-            rationale=f"No static or fuzzy match found for '{column_name}'; requires AI suggestion or manual annotation"
-        )
         self._resolved_cache[column_name] = resolved
         return resolved
 
