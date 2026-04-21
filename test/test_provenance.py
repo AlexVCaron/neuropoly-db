@@ -172,3 +172,53 @@ class TestProvenanceSerialization:
         """Test error when loading non-existent provenance file."""
         with pytest.raises(FileNotFoundError):
             load_provenance(tmp_path / "nonexistent.json")
+
+
+class TestObserverIsolation:
+    """Multi-observer tests: extra observers must not affect provenance output."""
+
+    def test_noop_observer_does_not_affect_provenance(self):
+        """
+        A second no-op observer registered alongside ProvenanceObserver
+        must not alter the provenance result.
+        """
+        from npdb.annotation import AnnotationConfig
+        from npdb.managers.annotation import ResolutionObserver
+        from npdb.managers.bids import BIDSStandardizer
+
+        class NoopObserver:
+            """Observer that records events without side-effects."""
+            received_resolved: list
+            received_warnings: list
+
+            def __init__(self):
+                self.received_resolved = []
+                self.received_warnings = []
+
+            def on_resolved(self, column_name, mapping):
+                self.received_resolved.append(column_name)
+
+            def on_warning(self, message):
+                self.received_warnings.append(message)
+
+        config = AnnotationConfig(mode="auto")
+        manager = BIDSStandardizer(config)
+
+        noop = NoopObserver()
+        manager.add_observer(noop)
+
+        annotations, resolved = manager.resolve_and_track(
+            ["participant_id", "age", "sex"]
+        )
+
+        # Provenance should have entries for the known columns
+        assert len(manager.provenance.per_column) > 0
+
+        # Noop observer received the same resolved columns (same events)
+        for col in manager.provenance.per_column:
+            assert col in noop.received_resolved
+
+        # Provenance content is unaffected by the noop observer
+        for col, prov in manager.provenance.per_column.items():
+            assert prov.column_name == col
+            assert prov.source in ("static", "deterministic")

@@ -9,11 +9,57 @@ import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Protocol, Tuple, runtime_checkable
 
 from npdb.annotation import AnnotationConfig
 from npdb.annotation.provenance import ProvenanceReport, add_column_provenance
 from npdb.automation.mappings.resolvers import MappingResolver, ResolvedMapping
+
+
+# ---------------------------------------------------------------------------
+# Observer protocol & built-in implementation
+# ---------------------------------------------------------------------------
+
+@runtime_checkable
+class ResolutionObserver(Protocol):
+    """
+    Protocol for objects that want to be notified of column resolution events.
+
+    Implement both methods and register via AnnotationManager.add_observer().
+    """
+
+    def on_resolved(self, column_name: str, mapping: ResolvedMapping) -> None:
+        """Called when a column is successfully resolved above the threshold."""
+        ...
+
+    def on_warning(self, message: str) -> None:
+        """Called when a low-confidence or otherwise noteworthy event occurs."""
+        ...
+
+
+class ProvenanceObserver:
+    """
+    Built-in observer that records resolution events into a ProvenanceReport.
+
+    Wraps add_column_provenance() and provenance.warnings.append() so that
+    AnnotationManager.resolve_and_track() never touches provenance directly.
+    """
+
+    def __init__(self, provenance: ProvenanceReport) -> None:
+        self.provenance = provenance
+
+    def on_resolved(self, column_name: str, mapping: ResolvedMapping) -> None:
+        add_column_provenance(
+            self.provenance,
+            column_name=mapping.column_name,
+            source=mapping.source,
+            confidence=mapping.confidence,
+            variable=mapping.mapped_variable,
+            rationale=mapping.rationale,
+        )
+
+    def on_warning(self, message: str) -> None:
+        self.provenance.warnings.append(message)
 
 
 class AnnotationManager(ABC):
@@ -37,6 +83,8 @@ class AnnotationManager(ABC):
         self._validate_config()
         self.resolver = self._init_resolver(config)
         self.provenance = self._init_provenance(config)
+        self._observers: List[ResolutionObserver] = []
+        self.add_observer(ProvenanceObserver(self.provenance))
 
     def _init_resolver(self, config: AnnotationConfig) -> MappingResolver:
         """Create MappingResolver from config."""
@@ -65,12 +113,26 @@ class AnnotationManager(ABC):
         """Return confidence threshold for the current mode."""
         return self._CONFIDENCE_THRESHOLDS.get(self.config.mode, 0.0)
 
+    def add_observer(self, observer: ResolutionObserver) -> None:
+        """Register an observer to receive resolution and warning events."""
+        self._observers.append(observer)
+
+    def _notify_observers(self, mapping: ResolvedMapping) -> None:
+        """Notify all observers that *mapping* was successfully resolved."""
+        for observer in self._observers:
+            observer.on_resolved(mapping.column_name, mapping)
+
+    def _notify_warning(self, message: str) -> None:
+        """Notify all observers of a warning message."""
+        for observer in self._observers:
+            observer.on_warning(message)
+
     def resolve_and_track(
         self,
         column_names: List[str],
     ) -> Tuple[Dict[str, dict], List[ResolvedMapping]]:
         """
-        Resolve columns and track provenance.
+        Resolve columns and track provenance via registered observers.
 
         Returns:
             Tuple of (annotations_dict, resolved_mappings).
@@ -86,20 +148,13 @@ class AnnotationManager(ABC):
                 continue
             # In auto/full-auto modes, skip below-threshold mappings
             if threshold > 0 and mapping.confidence < threshold and mapping.source != "static":
-                self.provenance.warnings.append(
+                self._notify_warning(
                     f"Low confidence mapping for '{mapping.column_name}': "
                     f"{mapping.rationale}"
                 )
                 continue
 
-            add_column_provenance(
-                self.provenance,
-                column_name=mapping.column_name,
-                source=mapping.source,
-                confidence=mapping.confidence,
-                variable=mapping.mapped_variable,
-                rationale=mapping.rationale,
-            )
+            self._notify_observers(mapping)
             annotations_dict[mapping.column_name] = {
                 "variable": mapping.mapped_variable,
                 "source": mapping.source,
