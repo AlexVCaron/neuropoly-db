@@ -220,7 +220,7 @@ class TestSmokeE2E:
         manager = NeurobagelAnnotator(config)
 
         # Mock NBAnnotationToolBrowserSession context manager
-        with patch('npdb.managers.neurobagel.NBAnnotationToolBrowserSession') as mock_browser_class:
+        with patch('npdb.annotation.strategies.NBAnnotationToolBrowserSession') as mock_browser_class:
             mock_session = AsyncMock()
             mock_browser_class.return_value.__aenter__.return_value = mock_session
             mock_browser_class.return_value.__aexit__.return_value = None
@@ -261,7 +261,7 @@ class TestSmokeE2E:
         )
         manager = NeurobagelAnnotator(config)
 
-        with patch('npdb.managers.neurobagel.NBAnnotationToolBrowserSession') as mock_browser_class:
+        with patch('npdb.annotation.strategies.NBAnnotationToolBrowserSession') as mock_browser_class:
             mock_session = AsyncMock()
             mock_browser_class.return_value.__aenter__.return_value = mock_session
             mock_browser_class.return_value.__aexit__.return_value = None
@@ -313,7 +313,7 @@ class TestSmokeE2E:
         )
         manager = NeurobagelAnnotator(config)
 
-        with patch('npdb.managers.neurobagel.NBAnnotationToolBrowserSession') as mock_browser_class:
+        with patch('npdb.annotation.strategies.NBAnnotationToolBrowserSession') as mock_browser_class:
             mock_session = AsyncMock()
             mock_browser_class.return_value.__aenter__.return_value = mock_session
             mock_browser_class.return_value.__aexit__.return_value = None
@@ -361,7 +361,7 @@ class TestSmokeE2E:
         )
         manager = NeurobagelAnnotator(config)
 
-        with patch('npdb.managers.neurobagel.NBAnnotationToolBrowserSession') as mock_browser_class:
+        with patch('npdb.annotation.strategies.NBAnnotationToolBrowserSession') as mock_browser_class:
             mock_session = AsyncMock()
             mock_browser_class.return_value.__aenter__.return_value = mock_session
             mock_browser_class.return_value.__aexit__.return_value = None
@@ -390,7 +390,7 @@ class TestSmokeE2E:
         config = AnnotationConfig(mode="full-auto", headless=True)
         manager = NeurobagelAnnotator(config)
 
-        with patch('npdb.managers.neurobagel.NBAnnotationToolBrowserSession') as mock_browser_class:
+        with patch('npdb.annotation.strategies.NBAnnotationToolBrowserSession') as mock_browser_class:
             mock_session = AsyncMock()
             mock_browser_class.return_value.__aenter__.return_value = mock_session
             mock_browser_class.return_value.__aexit__.return_value = None
