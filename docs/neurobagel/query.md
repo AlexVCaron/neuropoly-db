@@ -56,7 +56,7 @@ uv run npdb download --git --git-annex <query-results.tsv>
 If the Gitea server uses a self-signed certificate you may see an error like:
 
 ```
-SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate
+[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate
 ```
 
 Pass `--no-verify-ssl` to skip certificate verification:

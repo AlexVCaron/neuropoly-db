@@ -262,11 +262,11 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
         try:
             result = subprocess.run(
                 ["git", "-C", local_clone, "rev-parse", "HEAD"],
-                capture_output=True, text=True, check=True,
+                capture_output=True, text=True, check=True, timeout=10,
             )
             commit = result.stdout.strip()
             description["RepositoryURL"] = f"{base_url}/tree/{commit}"
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             description["RepositoryURL"] = base_url
 
         # Add access instructions; AccessLink is intentionally omitted (#20)
@@ -330,9 +330,6 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
             dest = output_dir / dataset_name
             label = f"{dataset_name} [{', '.join(sparse_paths)}]"
 
-            if progress_callback:
-                progress_callback(i + 1, total, dataset_name)
-
             try:
                 self.clone_sparse(repo_url, sparse_paths, dest)
                 if use_annex:
@@ -340,6 +337,9 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
                 results.append((True, label, "OK"))
             except RuntimeError as e:
                 results.append((False, label, str(e)))
+
+            if progress_callback:
+                progress_callback(i + 1, total, dataset_name)
 
         return results
 

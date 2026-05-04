@@ -832,17 +832,20 @@ def download(
         subjects.append((repo_url, imaging_path, dataset))
 
         # Include derivatives for each completed pipeline (issue #23).
-        # The subject prefix (sub-XX) is the first path component of
-        # ImagingSessionPath (e.g. "sub-01" from "sub-01/ses-01").
+        # The subject prefix (sub-XX) is the first non-empty path component of
+        # ImagingSessionPath (e.g. "sub-01" from "sub-01/ses-01" or "/sub-01").
         completed_pipelines_raw = (row.get("SessionCompletedPipelines") or "").strip()
         if completed_pipelines_raw:
-            subject_prefix = imaging_path.split("/")[0]
+            subject_prefix = next(
+                (p for p in imaging_path.split("/") if p), imaging_path
+            )
             for pipeline in [p.strip() for p in completed_pipelines_raw.split(",") if p.strip()]:
                 deriv_path = f"derivatives/{pipeline}/{subject_prefix}"
                 subjects.append((repo_url, deriv_path, dataset))
 
     if phenotypic_count:
-        typer.echo(f"ℹ️  Filtered {phenotypic_count} phenotypic row(s).")
+        noun = "row" if phenotypic_count == 1 else "rows"
+        typer.echo(f"ℹ️  Filtered {phenotypic_count} phenotypic {noun}.")
 
     if not subjects:
         typer.echo(
@@ -867,10 +870,10 @@ def download(
         task = progress.add_task("Cloning...", total=unique_repos)
 
         def _on_progress(current: int, total: int, dataset_name: str) -> None:
+            progress.advance(task)
             progress.update(
                 task,
-                completed=current - 1,
-                description=f"Cloning {dataset_name} ({current}/{total})...",
+                description=f"Cloned {dataset_name} ({current}/{total})",
             )
 
         results = gitea_manager.download_subjects(

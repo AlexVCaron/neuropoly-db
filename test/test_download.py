@@ -781,6 +781,7 @@ class TestDownloadCLI:
         assert len(call_subjects) == 1
         assert call_subjects[0][1] == "sub-01"
         assert "Filtered 1 phenotypic row" in result.output
+        # Singular: "Filtered 1 phenotypic row." (no 's')
 
     def test_git_mode_phenotypic_count_reported(self, tmp_path):
         tsv = _write_tsv(tmp_path, [
@@ -797,7 +798,7 @@ class TestDownloadCLI:
                 npdb,
                 ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
             )
-        assert "Filtered 2 phenotypic row" in result.output
+        assert "Filtered 2 phenotypic rows" in result.output
 
     def test_git_mode_derivatives_added_for_completed_pipelines(self, tmp_path):
         """When SessionCompletedPipelines is set, derivatives paths are queued."""
