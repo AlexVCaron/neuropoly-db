@@ -801,7 +801,7 @@ class TestDownloadCLI:
         assert "Filtered 2 phenotypic rows" in result.output
 
     def test_git_mode_derivatives_added_for_completed_pipelines(self, tmp_path):
-        """When SessionCompletedPipelines is set, derivatives paths are queued."""
+        """When --derivatives is given, derivatives paths are queued."""
         tsv = _write_tsv(tmp_path, [
             _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
                       SessionCompletedPipelines="fmriprep"),
@@ -813,13 +813,33 @@ class TestDownloadCLI:
             instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
             runner.invoke(
                 npdb,
-                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path),
+                 "--derivatives", "fmriprep"],
             )
 
         call_subjects = instance.download_subjects.call_args.args[0]
         paths = [p for _, p, _ in call_subjects]
         assert "sub-01" in paths
         assert "derivatives/fmriprep/sub-01" in paths
+
+    def test_git_mode_derivatives_not_added_without_flag(self, tmp_path):
+        """SessionCompletedPipelines populated but no --derivatives → no derivatives."""
+        tsv = _write_tsv(tmp_path, [
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
+                      SessionCompletedPipelines="fmriprep"),
+        ])
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", {**ENV_VARS}, clear=True), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
+            runner.invoke(
+                npdb,
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+            )
+
+        paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
+        assert paths == ["sub-01"]
 
     def test_git_mode_multiple_pipelines_added(self, tmp_path):
         tsv = _write_tsv(tmp_path, [
@@ -833,7 +853,8 @@ class TestDownloadCLI:
             instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
             runner.invoke(
                 npdb,
-                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path),
+                 "--derivatives", "fmriprep", "--derivatives", "mriqc"],
             )
 
         paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
@@ -853,7 +874,8 @@ class TestDownloadCLI:
             instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
             runner.invoke(
                 npdb,
-                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path),
+                 "--derivatives", "fmriprep"],
             )
 
         paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
@@ -872,11 +894,98 @@ class TestDownloadCLI:
             instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
             runner.invoke(
                 npdb,
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path),
+                 "--derivatives", "fmriprep"],
+            )
+
+        paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
+        assert "derivatives/fmriprep/sub-01" in paths
+
+    # ── --derivatives: env-var and filter logic ──────────────────────────
+
+    def test_derivatives_env_var_enables_all_pipelines(self, tmp_path):
+        """NPDB_DOWNLOAD_DERIVATIVES set → all TSV pipelines fetched, no CLI flag needed."""
+        tsv = _write_tsv(tmp_path, [
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
+                      SessionCompletedPipelines="fmriprep,mriqc"),
+        ])
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", {**ENV_VARS, "NPDB_DOWNLOAD_DERIVATIVES": "1"}), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
+            runner.invoke(
+                npdb,
                 ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
             )
 
         paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
         assert "derivatives/fmriprep/sub-01" in paths
+        assert "derivatives/mriqc/sub-01" in paths
+
+    def test_derivatives_cli_filter_overrides_env_var(self, tmp_path):
+        """--derivatives with values has whole precedence: env var is ignored."""
+        tsv = _write_tsv(tmp_path, [
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
+                      SessionCompletedPipelines="fmriprep,mriqc"),
+        ])
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", {**ENV_VARS, "NPDB_DOWNLOAD_DERIVATIVES": "1"}), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
+            runner.invoke(
+                npdb,
+                # Only ask for fmriprep; env var says "all" but CLI wins
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path),
+                 "--derivatives", "fmriprep"],
+            )
+
+        paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
+        assert "derivatives/fmriprep/sub-01" in paths
+        assert "derivatives/mriqc/sub-01" not in paths
+
+    def test_derivatives_filter_only_intersection_with_tsv(self, tmp_path):
+        """--derivatives with a pipeline not in TSV → it is silently skipped."""
+        tsv = _write_tsv(tmp_path, [
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
+                      SessionCompletedPipelines="fmriprep"),
+        ])
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", ENV_VARS), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
+            runner.invoke(
+                npdb,
+                # Request mriqc, but TSV only has fmriprep
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path),
+                 "--derivatives", "mriqc"],
+            )
+
+        paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
+        assert paths == ["sub-01"]  # mriqc not in TSV → nothing added
+
+    def test_derivatives_env_var_not_set_no_derivatives(self, tmp_path):
+        """Neither --derivatives nor NPDB_DOWNLOAD_DERIVATIVES → no derivatives."""
+        tsv = _write_tsv(tmp_path, [
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
+                      SessionCompletedPipelines="fmriprep,mriqc"),
+        ])
+        env = {k: v for k, v in ENV_VARS.items()}
+        env.pop("NPDB_DOWNLOAD_DERIVATIVES", None)
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", env, clear=True), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
+            runner.invoke(
+                npdb,
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+            )
+
+        paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
+        assert paths == ["sub-01"]
 
     def test_git_mode_no_imaging_rows_warns(self, tmp_path):
         # All rows have empty ImagingSessionPath

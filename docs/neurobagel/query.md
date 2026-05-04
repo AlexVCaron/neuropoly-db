@@ -45,10 +45,30 @@ The exported query results may contain an `AccessLink` column that, for some dat
 uv run npdb download --git --git-annex <query-results.tsv>
 ```
 
-`npdb download` automatically:
+`npdb download` automatically **skips phenotypic rows** — rows with no imaging path are filtered and a count is reported.
 
-- **Skips phenotypic rows** — rows with no imaging path are silently filtered and a count is reported.
-- **Downloads pipeline derivatives** — when the query included a pipeline filter, `SessionCompletedPipelines` is populated and `npdb download` will additionally fetch `derivatives/<pipeline>/sub-*` for each matching subject.
+#### Downloading pipeline derivatives
+
+Pipeline derivatives (e.g. `fmriprep`, `mriqc`) are **not** downloaded by default.  They are only included when you explicitly opt in:
+
+| How | What is downloaded |
+|-----|-------------------|
+| `--derivatives fmriprep` | Only `derivatives/fmriprep/sub-*` paths |
+| `--derivatives fmriprep --derivatives mriqc` | Only those two pipelines |
+| `NPDB_DOWNLOAD_DERIVATIVES=1` (env var) | All pipelines listed in `SessionCompletedPipelines` |
+
+The `--derivatives` flag always has **whole precedence** over `NPDB_DOWNLOAD_DERIVATIVES`.  Only pipelines present in `SessionCompletedPipelines` (i.e. matched by the query) are ever fetched; unknown pipeline names are silently skipped.
+
+```bash
+# Download raw data + fmriprep derivatives
+uv run npdb download --git --derivatives fmriprep <query-results.tsv>
+
+# Download raw data + all available derivatives (via env var)
+NPDB_DOWNLOAD_DERIVATIVES=1 uv run npdb download --git <query-results.tsv>
+```
+
+> [!NOTE]
+> `SessionCompletedPipelines` is only populated in the TSV when you applied a pipeline filter in the NeuroBagel query UI.  Without that filter the column is empty and no derivatives can be fetched.
 
 #### SSL certificate errors
 
