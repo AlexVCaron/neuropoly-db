@@ -839,12 +839,15 @@ def download(
     # deriv_mode: "none" | "all" | "filter"
     # deriv_filter: frozenset of pipeline names (only relevant in "filter" mode)
     env_deriv = os.environ.get("NPDB_DOWNLOAD_DERIVATIVES", "").strip()
-    if derivatives is not None:
+    if derivatives is not None and len(derivatives) > 0:
         # CLI given with specific values → filter; env var is completely ignored
         deriv_mode = "filter"
         deriv_filter: frozenset[str] = frozenset(
             p.strip() for p in derivatives if p.strip()
         )
+        if not deriv_filter:
+            # All provided values were blank — treat as if flag not given
+            deriv_mode = "none"
     elif env_deriv:
         # Env var set, no CLI arg → all derivatives
         deriv_mode = "all"
