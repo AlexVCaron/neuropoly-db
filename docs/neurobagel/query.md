@@ -33,14 +33,13 @@ The exported query results is saved in a **T**ab-**S**eparated-**V**alue (**TSV*
 |    `ImagingSessionPath`      | Relative path to the imaging session in the repository.                                                            |
 | `SessionImagingModalities`   | Name of the imaging modalities available in the session (e.g. `T1w`, `T2w`, `fMRI`, etc.).                        |
 | `SessionCompletedPipelines`  | Comma-separated list of derivative pipelines completed for this session (e.g. `fmriprep,mriqc`). Empty when no pipeline filter was applied in the query. |
-|        `AccessLink`          | Link to access the session data.                                                                                    |
 
 ### Downloading the imaging data from the query results
 
 > [!TIP]
 > First, install the `npdb` command line tool, following the [instructions here](../npdb/install.md).
 
-The exported query results contains an `AccessLink` column that, when possible, will be filled with an URL to download the imaging data associated with each session. **For datasets indexed on `git`, this is not possible.** Instead, use the `npdb download` command line tool with the `--git` option (additionally use the `--git-annex` option if necessary) :
+The exported query results may contain an `AccessLink` column that, for some datasets, will be filled with a URL to download the imaging data associated with each session. **For datasets indexed on `git`, this is not possible.** Instead, use the `npdb download` command line tool with the `--git` option (additionally use the `--git-annex` option if necessary) :
 
 ```bash
 uv run npdb download --git --git-annex <query-results.tsv>

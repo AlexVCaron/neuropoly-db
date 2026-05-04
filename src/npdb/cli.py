@@ -836,9 +836,10 @@ def download(
         # ImagingSessionPath (e.g. "sub-01" from "sub-01/ses-01" or "/sub-01").
         completed_pipelines_raw = (row.get("SessionCompletedPipelines") or "").strip()
         if completed_pipelines_raw:
-            subject_prefix = next(
-                (p for p in imaging_path.split("/") if p), imaging_path
-            )
+            parts = [p for p in imaging_path.split("/") if p]
+            if not parts:
+                continue  # malformed path; skip derivatives for this row
+            subject_prefix = parts[0]
             for pipeline in [p.strip() for p in completed_pipelines_raw.split(",") if p.strip()]:
                 deriv_path = f"derivatives/{pipeline}/{subject_prefix}"
                 subjects.append((repo_url, deriv_path, dataset))
