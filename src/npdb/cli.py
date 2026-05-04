@@ -704,7 +704,7 @@ def download(
     verify_ssl: bool = typer.Option(
         True,
         help="Verify SSL certificates when connecting to Gitea (git mode only).",
-        rich_help_panel=OPTION_GROUP_NAMES["input"],
+        rich_help_panel=OPTION_GROUP_NAMES["troubleshooting"],
     ),
     help_: bool = help_option(),
 ):
@@ -720,6 +720,9 @@ def download(
       clone from the [bold]RepositoryURL[/bold] column, limiting the working tree to the
       [bold]ImagingSessionPath[/bold] for each row.  Requires [bold]NP_GITEA_APP_URL[/bold],
       [bold]NP_GITEA_APP_USER[/bold] and [bold]NP_GITEA_APP_TOKEN[/bold] environment variables.
+      Phenotypic rows (no imaging path) are automatically skipped.
+      When [bold]SessionCompletedPipelines[/bold] is populated, the corresponding
+      [bold]derivatives/<pipeline>/sub-*[/bold] paths are also fetched.
     • [cyan]Git-annex mode[/cyan] ([bold]--git[/bold] [bold]--git-annex[/bold]): Same as git mode, but
       also runs [bold]git annex get[/bold] after cloning to fetch file content from
       annex pointers.
@@ -805,15 +808,41 @@ def download(
         gitea_url, gitea_user, gitea_token, ssl_verify=verify_ssl
     )
 
-    # Build subject list from TSV (ImagingSession rows only)
+    # Build subject list from TSV.
+    # Phenotypic rows (SessionType == "PhenotypicSession" or no ImagingSessionPath)
+    # are filtered out.  When SessionCompletedPipelines is populated the
+    # corresponding derivatives/<pipeline>/sub-* paths are also queued so that
+    # pipeline outputs are fetched alongside raw imaging data.
     subjects: list[tuple[str, str, str]] = []
+    phenotypic_count = 0
     for row in rows:
+        session_type = (row.get("SessionType") or "").strip()
         repo_url = (row.get("RepositoryURL") or "").strip()
         imaging_path = (row.get("ImagingSessionPath") or "").strip()
         dataset = (row.get("DatasetName") or "unknown").strip()
+
+        # Skip phenotypic-only rows (issue #19)
+        if session_type == "PhenotypicSession":
+            phenotypic_count += 1
+            continue
+
         if not repo_url or not imaging_path:
             continue
+
         subjects.append((repo_url, imaging_path, dataset))
+
+        # Include derivatives for each completed pipeline (issue #23).
+        # The subject prefix (sub-XX) is the first path component of
+        # ImagingSessionPath (e.g. "sub-01" from "sub-01/ses-01").
+        completed_pipelines_raw = (row.get("SessionCompletedPipelines") or "").strip()
+        if completed_pipelines_raw:
+            subject_prefix = imaging_path.split("/")[0]
+            for pipeline in [p.strip() for p in completed_pipelines_raw.split(",") if p.strip()]:
+                deriv_path = f"derivatives/{pipeline}/{subject_prefix}"
+                subjects.append((repo_url, deriv_path, dataset))
+
+    if phenotypic_count:
+        typer.echo(f"ℹ️  Filtered {phenotypic_count} phenotypic row(s).")
 
     if not subjects:
         typer.echo(
@@ -828,8 +857,26 @@ def download(
         f"Downloading via {mode_label} ({len(subjects)} paths across {unique_repos} repo(s))..."
     )
 
-    results = gitea_manager.download_subjects(
-        subjects, output_dir, use_annex=git_annex)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Cloning...", total=unique_repos)
+
+        def _on_progress(current: int, total: int, dataset_name: str) -> None:
+            progress.update(
+                task,
+                completed=current - 1,
+                description=f"Cloning {dataset_name} ({current}/{total})...",
+            )
+
+        results = gitea_manager.download_subjects(
+            subjects, output_dir, use_annex=git_annex,
+            progress_callback=_on_progress,
+        )
 
     for ok, label, msg in results:
         typer.echo(f"{'✓' if ok else '✗'} {label}: {msg}")

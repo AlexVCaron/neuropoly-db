@@ -535,6 +535,33 @@ class TestDownloadSubjects:
         results = dnp.download_subjects([], tmp_path)
         assert results == []
 
+    def test_progress_callback_invoked_per_repo(self, dnp, tmp_path):
+        subjects = [
+            ("https://data.neuro.polymtl.ca/datasets/spine-ms", "sub-01", "spine-ms"),
+            ("https://data.neuro.polymtl.ca/datasets/whole-spine",
+             "sub-amuAP", "whole-spine"),
+        ]
+        calls = []
+        with patch.object(dnp, "clone_sparse"):
+            dnp.download_subjects(
+                subjects, tmp_path,
+                progress_callback=lambda cur, tot, name: calls.append((cur, tot, name)),
+            )
+
+        assert len(calls) == 2
+        # current should be 1-based and total should be 2 throughout
+        assert calls[0] == (1, 2, calls[0][2])
+        assert calls[1] == (2, 2, calls[1][2])
+
+    def test_progress_callback_none_is_safe(self, dnp, tmp_path):
+        subjects = [
+            ("https://data.neuro.polymtl.ca/datasets/whole-spine",
+             "sub-amuAP", "whole-spine"),
+        ]
+        with patch.object(dnp, "clone_sparse"):
+            results = dnp.download_subjects(subjects, tmp_path, progress_callback=None)
+        assert len(results) == 1
+
 
 # ---------------------------------------------------------------------------
 # _read_download_tsv helper
@@ -724,9 +751,131 @@ class TestDownloadCLI:
         assert result.exit_code == 0, result.output
         instance.download_subjects.assert_called_once()
         call_subjects = instance.download_subjects.call_args.args[0]
-        # Only the two ImagingSession rows should be passed
+        # Only the two ImagingSession rows should be passed (no pipelines queried)
         assert len(call_subjects) == 2
         assert all(path != "" for _, path, _ in call_subjects)
+
+    def test_git_mode_phenotypic_session_type_filtered(self, tmp_path):
+        """Rows with SessionType=PhenotypicSession are dropped even if they have a path."""
+        tsv = _write_tsv(tmp_path, [
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
+                      SessionType="ImagingSession"),
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
+                      SessionType="PhenotypicSession"),
+        ])
+
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", ENV_VARS), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [
+                (True, "whole-spine [sub-01]", "OK"),
+            ]
+            result = runner.invoke(
+                npdb,
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+            )
+
+        assert result.exit_code == 0, result.output
+        call_subjects = instance.download_subjects.call_args.args[0]
+        assert len(call_subjects) == 1
+        assert call_subjects[0][1] == "sub-01"
+        assert "Filtered 1 phenotypic row" in result.output
+
+    def test_git_mode_phenotypic_count_reported(self, tmp_path):
+        tsv = _write_tsv(tmp_path, [
+            _make_row(ImagingSessionPath="sub-01", SessionType="ImagingSession"),
+            _make_row(ImagingSessionPath="sub-01", SessionType="PhenotypicSession"),
+            _make_row(ImagingSessionPath="sub-02", SessionType="PhenotypicSession"),
+        ])
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", ENV_VARS), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
+            result = runner.invoke(
+                npdb,
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+            )
+        assert "Filtered 2 phenotypic row" in result.output
+
+    def test_git_mode_derivatives_added_for_completed_pipelines(self, tmp_path):
+        """When SessionCompletedPipelines is set, derivatives paths are queued."""
+        tsv = _write_tsv(tmp_path, [
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
+                      SessionCompletedPipelines="fmriprep"),
+        ])
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", ENV_VARS), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
+            runner.invoke(
+                npdb,
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+            )
+
+        call_subjects = instance.download_subjects.call_args.args[0]
+        paths = [p for _, p, _ in call_subjects]
+        assert "sub-01" in paths
+        assert "derivatives/fmriprep/sub-01" in paths
+
+    def test_git_mode_multiple_pipelines_added(self, tmp_path):
+        tsv = _write_tsv(tmp_path, [
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
+                      SessionCompletedPipelines="fmriprep,mriqc"),
+        ])
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", ENV_VARS), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
+            runner.invoke(
+                npdb,
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+            )
+
+        paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
+        assert "derivatives/fmriprep/sub-01" in paths
+        assert "derivatives/mriqc/sub-01" in paths
+
+    def test_git_mode_no_derivatives_without_pipeline(self, tmp_path):
+        """When SessionCompletedPipelines is empty, no derivatives paths are added."""
+        tsv = _write_tsv(tmp_path, [
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01",
+                      SessionCompletedPipelines=""),
+        ])
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", ENV_VARS), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
+            runner.invoke(
+                npdb,
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+            )
+
+        paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
+        assert paths == ["sub-01"]
+
+    def test_git_mode_subject_prefix_extracted_from_session_path(self, tmp_path):
+        """ImagingSessionPath sub-01/ses-01 → derivative path derivatives/pl/sub-01."""
+        tsv = _write_tsv(tmp_path, [
+            _make_row(SubjectID="sub-01", ImagingSessionPath="sub-01/ses-01",
+                      SessionCompletedPipelines="fmriprep"),
+        ])
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", ENV_VARS), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [(True, "whole-spine [sub-01]", "OK")]
+            runner.invoke(
+                npdb,
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+            )
+
+        paths = [p for _, p, _ in instance.download_subjects.call_args.args[0]]
+        assert "derivatives/fmriprep/sub-01" in paths
 
     def test_git_mode_no_imaging_rows_warns(self, tmp_path):
         # All rows have empty ImagingSessionPath
@@ -774,13 +923,12 @@ class TestDownloadCLI:
                  "--output-dir", str(tmp_path), "--no-verify-ssl"],
             )
 
-        _, call_kwargs = instance.download_subjects.call_args
-        # use_annex is the third positional arg or keyword
-        call_args = instance.download_subjects.call_args
+        call_kwargs = instance.download_subjects.call_args.kwargs
+        call_args_pos = instance.download_subjects.call_args.args
         use_annex_val = (
             call_kwargs.get("use_annex")
             if call_kwargs.get("use_annex") is not None
-            else call_args.args[2] if len(call_args.args) > 2 else None
+            else call_args_pos[2] if len(call_args_pos) > 2 else None
         )
         assert use_annex_val is True
 
@@ -798,3 +946,21 @@ class TestDownloadCLI:
                  "--output-dir", str(tmp_path), "--no-verify-ssl"],
             )
         assert "git + git-annex" in result.output
+
+    def test_git_mode_progress_callback_invoked(self, tmp_path):
+        """download_subjects receives a progress_callback kwarg."""
+        tsv = _write_tsv(tmp_path, [_make_row(ImagingSessionPath="sub-amuAP")])
+        with patch("npdb.cli.load_dotenv"), \
+                patch.dict("os.environ", ENV_VARS), \
+                patch("npdb.cli.DataNeuroPolyMTL") as MockMgr:
+            instance = MockMgr.return_value
+            instance.download_subjects.return_value = [
+                (True, "whole-spine [sub-amuAP]", "OK")]
+            runner.invoke(
+                npdb,
+                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+            )
+
+        call_kwargs = instance.download_subjects.call_args.kwargs
+        assert "progress_callback" in call_kwargs
+        assert callable(call_kwargs["progress_callback"])

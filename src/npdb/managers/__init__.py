@@ -257,12 +257,21 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
         if not description.get("Keywords"):
             description["Keywords"] = [dataset]
 
-        # Add repository URL
-        description["RepositoryURL"] = f"{self.client.url}/{self.organization.name}/{dataset}"
-        # Add documentation link as AccessLink
+        # Add repository URL, including the HEAD commit for reproducibility (#18)
+        base_url = f"{self.client.url}/{self.organization.name}/{dataset}"
+        try:
+            result = subprocess.run(
+                ["git", "-C", local_clone, "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True,
+            )
+            commit = result.stdout.strip()
+            description["RepositoryURL"] = f"{base_url}/tree/{commit}"
+        except subprocess.CalledProcessError:
+            description["RepositoryURL"] = base_url
+
+        # Add access instructions; AccessLink is intentionally omitted (#20)
         description["AccessInstructions"] = "Refer to the access link provided with the repository."
-        description["AccessLink"] = "https://intranet.neuro.polymtl.ca/data/README.html"
-        # Document all access as resctricted for now
+        # Document all access as restricted for now
         description["AccessType"] = "restricted"
         # Fetch repository maintainer as contact for access if not present
         # if "AccessEmail" not in description:
@@ -283,6 +292,7 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
         subjects: list[tuple[str, str, str]],
         output_dir: Path,
         use_annex: bool = False,
+        progress_callback: Optional[Callable[[int, int, str], None]] = None,
     ) -> list[tuple[bool, str, str]]:
         """
         Download subject directories using authenticated sparse git clone.
@@ -298,6 +308,8 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
             output_dir: Base output directory.  Each dataset lands in
                         ``output_dir / dataset_name``.
             use_annex: When ``True``, run ``git annex get`` after each clone.
+            progress_callback: Optional callable invoked at the start of each
+                repository download as ``callback(current, total, dataset_name)``.
 
         Returns:
             List of ``(success, label, message)`` for each unique repository.
@@ -312,10 +324,14 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
                 groups[key].append(sparse_path)
 
         results: list[tuple[bool, str, str]] = []
+        total = len(groups)
 
-        for (repo_url, dataset_name), sparse_paths in groups.items():
+        for i, ((repo_url, dataset_name), sparse_paths) in enumerate(groups.items()):
             dest = output_dir / dataset_name
             label = f"{dataset_name} [{', '.join(sparse_paths)}]"
+
+            if progress_callback:
+                progress_callback(i + 1, total, dataset_name)
 
             try:
                 self.clone_sparse(repo_url, sparse_paths, dest)
