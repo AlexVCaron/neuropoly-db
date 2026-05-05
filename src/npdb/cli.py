@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.progress import BarColumn, Progress, TextColumn, DownloadColumn, SpinnerColumn
 from rich.live import Live
 from rich.panel import Panel
-from typing import Optional
+from typing import List, Optional
 import httpx
 
 from npdb.managers import (
@@ -704,7 +704,20 @@ def download(
     verify_ssl: bool = typer.Option(
         True,
         help="Verify SSL certificates when connecting to Gitea (git mode only).",
-        rich_help_panel=OPTION_GROUP_NAMES["input"],
+        rich_help_panel=OPTION_GROUP_NAMES["troubleshooting"],
+    ),
+    derivatives: Optional[List[str]] = typer.Option(
+        None,
+        "--derivatives",
+        help=(
+            "Include pipeline derivatives alongside raw imaging data. "
+            "Pass once per pipeline to scope to specific pipelines "
+            "(e.g. --derivatives fmriprep --derivatives mriqc). "
+            "Omitting the flag with NPDB_DOWNLOAD_DERIVATIVES set in the environment "
+            "includes all available pipelines. "
+            "Providing this flag always takes full precedence over NPDB_DOWNLOAD_DERIVATIVES."
+        ),
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
     help_: bool = help_option(),
 ):
@@ -720,9 +733,20 @@ def download(
       clone from the [bold]RepositoryURL[/bold] column, limiting the working tree to the
       [bold]ImagingSessionPath[/bold] for each row.  Requires [bold]NP_GITEA_APP_URL[/bold],
       [bold]NP_GITEA_APP_USER[/bold] and [bold]NP_GITEA_APP_TOKEN[/bold] environment variables.
+      Phenotypic rows (no imaging path) are automatically skipped.
     • [cyan]Git-annex mode[/cyan] ([bold]--git[/bold] [bold]--git-annex[/bold]): Same as git mode, but
       also runs [bold]git annex get[/bold] after cloning to fetch file content from
       annex pointers.
+
+    [bold]Derivatives:[/bold]
+
+    Pipeline derivatives (e.g. fmriprep, mriqc) stored under [bold]derivatives/<pipeline>/[/bold]
+    are [italic]not[/italic] downloaded by default.  Use [bold]--derivatives[/bold] to opt in:
+
+    • [bold]--derivatives[/bold] (repeated with pipeline names): fetch those specific pipelines.
+      Full precedence over [bold]NPDB_DOWNLOAD_DERIVATIVES[/bold].
+    • [bold]NPDB_DOWNLOAD_DERIVATIVES[/bold] env var (any non-empty value): fetch all pipelines
+      listed in [bold]SessionCompletedPipelines[/bold] (same as bare flag behavior).
     """
     if git_annex and not git:
         typer.echo(
@@ -805,15 +829,81 @@ def download(
         gitea_url, gitea_user, gitea_token, ssl_verify=verify_ssl
     )
 
-    # Build subject list from TSV (ImagingSession rows only)
+    # Compute the effective derivative pipeline mode (issue #23).
+    #
+    # Priority (highest → lowest):
+    #   1. --derivatives CLI flag  → "filter" mode: only those specific pipelines
+    #   2. NPDB_DOWNLOAD_DERIVATIVES env var (non-empty) → "all" mode
+    #   3. Neither                 → "none" mode (no derivatives)
+    #
+    # deriv_mode: "none" | "all" | "filter"
+    # deriv_filter: frozenset of pipeline names (only relevant in "filter" mode)
+    env_deriv = os.environ.get("NPDB_DOWNLOAD_DERIVATIVES", "").strip()
+    if derivatives is not None and len(derivatives) > 0:
+        # CLI given with specific values → filter; env var is completely ignored
+        deriv_mode = "filter"
+        deriv_filter: frozenset[str] = frozenset(
+            p.strip() for p in derivatives if p.strip()
+        )
+        if not deriv_filter:
+            # All provided values were blank — treat as if flag not given
+            deriv_mode = "none"
+    elif env_deriv:
+        # Env var set, no CLI arg → all derivatives
+        deriv_mode = "all"
+        deriv_filter = frozenset()
+    else:
+        # Neither → no derivatives
+        deriv_mode = "none"
+        deriv_filter = frozenset()
+
+    # Build subject list from TSV.
+    # Phenotypic rows (SessionType == "PhenotypicSession" or no ImagingSessionPath)
+    # are filtered out.  Pipeline derivatives are only added when deriv_mode != "none".
     subjects: list[tuple[str, str, str]] = []
+    phenotypic_count = 0
     for row in rows:
+        session_type = (row.get("SessionType") or "").strip()
         repo_url = (row.get("RepositoryURL") or "").strip()
         imaging_path = (row.get("ImagingSessionPath") or "").strip()
         dataset = (row.get("DatasetName") or "unknown").strip()
+
+        # Skip phenotypic-only rows (issue #19)
+        if session_type == "PhenotypicSession":
+            phenotypic_count += 1
+            continue
+
         if not repo_url or not imaging_path:
             continue
+
         subjects.append((repo_url, imaging_path, dataset))
+
+        # Include derivatives when requested (issue #23).
+        # The subject prefix (sub-XX) is the first non-empty path component of
+        # ImagingSessionPath (e.g. "sub-01" from "sub-01/ses-01" or "/sub-01").
+        if deriv_mode == "none":
+            continue
+        completed_pipelines_raw = (row.get("SessionCompletedPipelines") or "").strip()
+        if not completed_pipelines_raw:
+            continue
+        parts = [p for p in imaging_path.split("/") if p]
+        if not parts:
+            continue  # malformed path; skip derivatives for this row
+        subject_prefix = parts[0]
+        tsv_pipelines = {
+            p.strip() for p in completed_pipelines_raw.split(",") if p.strip()
+        }
+        if deriv_mode == "all":
+            pipelines_to_fetch = tsv_pipelines
+        else:  # "filter"
+            pipelines_to_fetch = tsv_pipelines & deriv_filter
+        for pipeline in pipelines_to_fetch:
+            deriv_path = f"derivatives/{pipeline}/{subject_prefix}"
+            subjects.append((repo_url, deriv_path, dataset))
+
+    if phenotypic_count:
+        noun = "row" if phenotypic_count == 1 else "rows"
+        typer.echo(f"ℹ️  Filtered {phenotypic_count} phenotypic {noun}.")
 
     if not subjects:
         typer.echo(
@@ -828,8 +918,26 @@ def download(
         f"Downloading via {mode_label} ({len(subjects)} paths across {unique_repos} repo(s))..."
     )
 
-    results = gitea_manager.download_subjects(
-        subjects, output_dir, use_annex=git_annex)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Cloning...", total=unique_repos)
+
+        def _on_progress(current: int, total: int, dataset_name: str) -> None:
+            progress.advance(task)
+            progress.update(
+                task,
+                description=f"Cloned {dataset_name} ({current}/{total})",
+            )
+
+        results = gitea_manager.download_subjects(
+            subjects, output_dir, use_annex=git_annex,
+            progress_callback=_on_progress,
+        )
 
     for ok, label, msg in results:
         typer.echo(f"{'✓' if ok else '✗'} {label}: {msg}")
