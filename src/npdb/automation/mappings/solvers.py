@@ -10,6 +10,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
+def _load_json(path: Path, missing_prefix: str) -> Dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"{missing_prefix}: {path}")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def load_static_mappings(resource_path: Optional[Path] = None) -> Dict[str, Any]:
     """
     Load built-in static phenotype mappings.
@@ -26,14 +32,7 @@ def load_static_mappings(resource_path: Optional[Path] = None) -> Dict[str, Any]
             / "resources"
             / "phenotype_mappings.json"
         )
-
-    if not resource_path.exists():
-        raise FileNotFoundError(f"Phenotype mappings file not found: {resource_path}")
-
-    with open(resource_path, "r") as f:
-        data = json.load(f)
-
-    return data
+    return _load_json(resource_path, "Phenotype mappings file not found")
 
 
 def merge_mappings(
@@ -54,13 +53,9 @@ def merge_mappings(
     merged = builtin.copy()
 
     if user_mappings:
-        # Merge @context
-        if "@context" in user_mappings:
-            merged.setdefault("@context", {}).update(user_mappings["@context"])
-
-        # Merge mappings (user overrides builtin)
-        if "mappings" in user_mappings:
-            merged.setdefault("mappings", {}).update(user_mappings["mappings"])
+        for section in ("@context", "mappings"):
+            if section in user_mappings:
+                merged.setdefault(section, {}).update(user_mappings[section])
 
     return merged
 
@@ -79,12 +74,4 @@ def load_user_mappings(path: str | Path) -> Dict[str, Any]:
         FileNotFoundError: If file does not exist
         json.JSONDecodeError: If file is invalid JSON
     """
-    path = Path(path) if isinstance(path, str) else path
-
-    if not path.exists():
-        raise FileNotFoundError(f"User mappings file not found: {path}")
-
-    with open(path, "r") as f:
-        data = json.load(f)
-
-    return data
+    return _load_json(Path(path), "User mappings file not found")

@@ -85,3 +85,15 @@ class TestMappingsRegistry:
         assert "custom_age" in merged["mappings"]
         # Built-in mappings should still be present
         assert "participant_id" in merged["mappings"]
+
+    def test_load_user_mappings_accepts_str_path(self, user_mappings_path):
+        """Test user mappings loader accepts string paths."""
+        user_map = load_user_mappings(str(user_mappings_path))
+        assert "mappings" in user_map
+        assert "custom_age" in user_map["mappings"]
+
+    def test_merge_mappings_without_user_returns_copy(self, builtin_mappings):
+        """Test merge_mappings returns a separate dict when no user map is provided."""
+        merged = merge_mappings(builtin_mappings)
+        assert merged == builtin_mappings
+        assert merged is not builtin_mappings
