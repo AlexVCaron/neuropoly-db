@@ -10,9 +10,20 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 
-def _load_json(path: Path, missing_prefix: str) -> Dict[str, Any]:
+def _load_json(path: Path, missing_message: str) -> Dict[str, Any]:
+    """
+    Load JSON file from disk.
+
+    Args:
+        path: JSON file path to read.
+        missing_message: Error message prefix used when file does not exist.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        json.JSONDecodeError: If the file content is invalid JSON.
+    """
     if not path.exists():
-        raise FileNotFoundError(f"{missing_prefix}: {path}")
+        raise FileNotFoundError(f"{missing_message}: {path}")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
