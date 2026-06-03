@@ -1,14 +1,10 @@
-from enum import Enum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from npdb.annotation.modes import AnnotationMode
 
-class AnnotationMode(str, Enum):
-    MANUAL = "manual"
-    ASSIST = "assist"
-    AUTO = "auto"
-    FULL_AUTO = "full-auto"
+__all__ = ["AnnotationMode", "AnnotationConfig"]
 
 
 class AnnotationConfig(BaseModel):

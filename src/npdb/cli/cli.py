@@ -1,4 +1,3 @@
-import asyncio
 import csv
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -7,7 +6,6 @@ from typing import Optional
 
 import httpx
 import typer
-from dotenv import load_dotenv
 from rich.progress import (
     BarColumn,
     Progress,
@@ -16,12 +14,7 @@ from rich.progress import (
     TextColumn,
 )
 
-from npdb.annotation import AnnotationMode
-from npdb.annotation.standardize import load_header_map, validate_header_map_keys
-from npdb.automation.mappings.solvers import load_static_mappings
-from npdb.cli.facade import BIDSStandardizationFacade, DatasetConversionFacade
-from npdb.cli.observers import CLIProgressObserver
-from npdb.factories import AnnotationConfigFactory, GiteaManagerFactory
+from npdb.annotation.modes import AnnotationMode
 
 OPTION_GROUP_NAMES = {
     "input": "Input Options",
@@ -141,6 +134,15 @@ def gitea2bagel(
     * [cyan]auto[/cyan]: Fully automated with ML-based suggestions
     * [cyan]full-auto[/cyan]: Experimental unattended mode (requires review!)
     """
+    import asyncio
+
+    from dotenv import load_dotenv
+
+    from npdb.annotation.standardize import load_header_map, validate_header_map_keys
+    from npdb.automation.mappings.solvers import load_static_mappings
+    from npdb.cli.facade import DatasetConversionFacade
+    from npdb.factories import AnnotationConfigFactory, GiteaManagerFactory
+
     try:
         mode_enum = AnnotationMode(mode)
     except ValueError:
@@ -309,6 +311,11 @@ def download(
     * [cyan]Git-annex mode[/cyan] ([bold]--git[/bold] [bold]--git-annex[/bold]): Same as git mode, but
       also runs [bold]git annex get[/bold] after cloning.
     """
+    from dotenv import load_dotenv
+
+    from npdb.cli.observers import CLIProgressObserver
+    from npdb.factories import GiteaManagerFactory
+
     if git_annex and not git:
         typer.echo("Error: --git-annex requires --git.", err=True)
         raise typer.Exit(code=1)
@@ -521,6 +528,11 @@ def standardize_bids(
     Edits the dataset in-place. Use [cyan]--dry-run[/cyan] to preview changes
     without writing files.
     """
+    import asyncio
+
+    from npdb.cli.facade import BIDSStandardizationFacade
+    from npdb.factories import AnnotationConfigFactory
+
     try:
         mode_enum = AnnotationMode(mode)
     except ValueError:
