@@ -1,8 +1,6 @@
 import contextlib
 import json
-import os
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -32,8 +30,7 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
         repo = next(iter([d for d in self.datasets if d.name == dataset]))  # type: ignore
         clone_url = f"{repo.gitea.url}/{self.organization.name}/{repo.name}.git"  # type: ignore
 
-        env = os.environ.copy()
-        env["GIT_TERMINAL_PROMPT"] = "0"
+        env = self.git_env()
 
         # Cache-dir mode: reuse an existing clone via fetch, or do a fresh clone.
         if cache_dir:
@@ -81,7 +78,7 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
         try:
             commit = self.get_main_branch_head_commit(base_url)
             description["RepositoryURL"] = f"{base_url}/tree/{commit}"
-        except subprocess.CalledProcessError:
+        except RuntimeError:
             description["RepositoryURL"] = base_url
 
         # Add documentation link as AccessLink
@@ -136,13 +133,12 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
             try:
                 self.clone_sparse(repo_url, sparse_paths, dest)
                 if use_annex:
-                    self.annex_get(
-                        dest,
-                        sparse_paths,
-                    )
+                    self.annex_get(dest, sparse_paths, repo_name=dataset_name)
                 results.append((True, label, "OK"))
+                self._notify_repo_done(dataset_name, True)
             except RuntimeError as e:
                 results.append((False, label, str(e)))
+                self._notify_repo_done(dataset_name, False)
 
         return results
 

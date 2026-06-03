@@ -6,15 +6,18 @@ from typing import Optional
 
 import httpx
 import typer
+from dotenv import load_dotenv
+from rich.live import Live
 from rich.progress import (
     BarColumn,
     Progress,
     SpinnerColumn,
-    TaskProgressColumn,
     TextColumn,
 )
 
 from npdb.annotation.modes import AnnotationMode
+from npdb.cli.display import RepoDownloadDisplay
+from npdb.factories import GiteaManagerFactory
 
 OPTION_GROUP_NAMES = {
     "input": "Input Options",
@@ -311,11 +314,6 @@ def download(
     * [cyan]Git-annex mode[/cyan] ([bold]--git[/bold] [bold]--git-annex[/bold]): Same as git mode, but
       also runs [bold]git annex get[/bold] after cloning.
     """
-    from dotenv import load_dotenv
-
-    from npdb.cli.observers import CLIProgressObserver
-    from npdb.factories import GiteaManagerFactory
-
     if git_annex and not git:
         typer.echo("Error: --git-annex requires --git.", err=True)
         raise typer.Exit(code=1)
@@ -376,9 +374,11 @@ def download(
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
 
     try:
-        typer.echo("Initializing Gitea manager...")
+        if verbose:
+            typer.echo("Initializing Gitea manager...")
         gitea_manager = GiteaManagerFactory.create_from_env(ssl_verify=verify_ssl)
-        typer.echo("Gitea manager initialized successfully.")
+        if verbose:
+            typer.echo("Gitea manager initialized successfully.")
     except ValueError as e:
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1)
@@ -407,24 +407,14 @@ def download(
         f"Downloading via {mode_label} ({len(subjects)} paths across {unique_repos} repo(s))..."
     )
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        transient=True,
-        expand=True,
-    ) as progress:
-        gitea_manager.add_progress_observer(CLIProgressObserver(progress, color="cyan"))
-
+    display = RepoDownloadDisplay()
+    gitea_manager.add_download_observer(display)
+    with Live(display, refresh_per_second=4, transient=False):
         results = gitea_manager.download_subjects(
             subjects,
             output_dir,
             use_annex=git_annex,
         )
-
-    for ok, label, msg in results:
-        typer.echo(f"{'SUCCESS' if ok else 'FAIL'} {label}: {msg}")
 
     failed = sum(1 for ok, _, _ in results if not ok)
     if failed:

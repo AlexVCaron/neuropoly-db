@@ -1,129 +1,38 @@
-from enum import Enum, auto
-from threading import Lock
-from typing import Any
+"""
+Observer protocol for download progress in npdb CLI commands.
+"""
 
-from rich.progress import Progress
+from __future__ import annotations
 
-lock = Lock()
-
-
-class MessageType(Enum):
-    INFO = auto()
-    WARNING = auto()
-    ERROR = auto()
+from typing import Protocol, runtime_checkable
 
 
-class UpdateType(Enum):
-    PROGRESS = auto()
-    MESSAGE = auto()
+@runtime_checkable
+class DownloadObserver(Protocol):
+    """
+    Observer for repository download operations.
 
+    Register via
+    :meth:`~npdb.external.neurogitea.gitea.GiteaManager.add_download_observer`.
+    All methods are called from the thread that runs the git subprocess.
+    """
 
-class Task:
-    def __init__(
-        self, id: Any, progress: Progress, description: str = "", *args, **kwargs
-    ):
-        self.id = id
-        self.task_id = progress.add_task(description, *args, **kwargs)
+    def on_repo_step(
+        self, repo: str, step: str, step_num: int, total_steps: int
+    ) -> None:
+        """Called when a new step begins for *repo* (clone, sparse-checkout, …)."""
+        ...
 
+    def on_file_progress(
+        self, repo: str, file: str, bytes_done: int, bytes_total: int
+    ) -> None:
+        """Called repeatedly with byte-level download progress for a *file* in *repo*."""
+        ...
 
-class Observer:
-    pass
+    def on_file_complete(self, repo: str, file: str) -> None:
+        """Called once when *file* inside *repo* has been fully downloaded."""
+        ...
 
-
-class CLIDisplayObserver(Observer):
-    pass
-
-
-class CLIMessageObserver(CLIDisplayObserver):
-    pass
-
-
-class CLIProgressObserver(CLIDisplayObserver):
-    def __init__(self, progress: Progress, color: str = "cyan"):
-        self._tasks = []
-        self._progress = progress
-        self._color = color
-
-    def update(self, description, task_id=None, *args, **kwargs):
-        with lock:
-            if task_id is None:
-                try:
-                    _task = next(filter(lambda t: t.id == description, self._tasks))
-                    self._progress.update(
-                        _task.task_id,
-                        description=f"[{self._color}]{description}[/{self._color}]",
-                        *args,
-                        **kwargs,
-                    )
-                except StopIteration:
-                    self._tasks.append(
-                        Task(
-                            description,
-                            self._progress,
-                            f"[{self._color}]{description}[/{self._color}]",
-                            *args,
-                            **kwargs,
-                        )
-                    )
-            else:
-                try:
-                    _task = next(filter(lambda t: t.id == task_id, self._tasks))
-                    self._progress.update(
-                        _task.task_id,
-                        description=f"[{self._color}]{description}[/{self._color}]",
-                        *args,
-                        **kwargs,
-                    )
-                except StopIteration:
-                    self._tasks.append(
-                        Task(
-                            task_id,
-                            self._progress,
-                            f"[{self._color}]{description}[/{self._color}]",
-                            *args,
-                            **kwargs,
-                        )
-                    )
-
-    def advance(self, description, task_id=None, advance=1, *args, **kwargs):
-        with lock:
-            if task_id is None:
-                try:
-                    _task = next(filter(lambda t: t.id == description, self._tasks))
-                    self._progress.update(
-                        _task.task_id,
-                        description=f"[{self._color}]{description}[/{self._color}]",
-                        advance=advance,
-                        *args,
-                        **kwargs,
-                    )
-                except StopIteration:
-                    self._tasks.append(
-                        Task(
-                            description,
-                            self._progress,
-                            f"[{self._color}]{description}[/{self._color}]",
-                            *args,
-                            **kwargs,
-                        )
-                    )
-            else:
-                try:
-                    _task = next(filter(lambda t: t.id == task_id, self._tasks))
-                    self._progress.update(
-                        _task.task_id,
-                        description=f"[{self._color}]{description}[/{self._color}]",
-                        advance=advance,
-                        *args,
-                        **kwargs,
-                    )
-                except StopIteration:
-                    self._tasks.append(
-                        Task(
-                            task_id,
-                            self._progress,
-                            f"[{self._color}]{description}[/{self._color}]",
-                            *args,
-                            **kwargs,
-                        )
-                    )
+    def on_repo_done(self, repo: str, success: bool) -> None:
+        """Called when all operations for *repo* have completed or failed."""
+        ...

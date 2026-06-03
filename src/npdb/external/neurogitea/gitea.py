@@ -1,66 +1,39 @@
 import json
-import os
-import shlex
-import subprocess
-import tempfile
-import uuid
-from base64 import b64encode
 from pathlib import Path
 from urllib.parse import urlparse
 
 import gitea as gt_client
-from rich.progress import TaskID
-from tenacity import retry, stop_after_attempt, wait_exponential
 
-from npdb.cli.observers import MessageType, Observer, UpdateType
-from npdb.managers.model import Manager
+from npdb.managers.model import GitManager
 
 
-class GiteaManager(Manager):
+class GiteaManager(GitManager):
     def __init__(self, url: str, user: str, token: str, ssl_verify: bool = True):
+        super().__init__(user, token, ssl_verify)
+
         # Normalise the URL: strip protocol if present, remember it.
         # NP_GITEA_APP_URL may or may not include a scheme; both forms are
         # accepted and produce the same behaviour.
         if "://" in url:
             _parsed = urlparse(url)
             self._proto = _parsed.scheme  # "https" or "http"
-            self.host = _parsed.netloc  # "data.neuro.polymtl.ca"
+            self._host = _parsed.netloc  # "data.neuro.polymtl.ca"
         else:
             self._proto = "https"  # sensible default
-            self.host = url.split("/")[0]  # strip any trailing path
+            self._host = url.split("/")[0]  # strip any trailing path
 
-        self._http_base = f"{self._proto}://{self.host}"
+        self._http_base = f"{self._proto}://{self._host}"
 
         self.client = gt_client.Gitea(
-            gitea_url=self._http_base, token_text=token, verify=ssl_verify
+            gitea_url=self._http_base, token_text=self._token, verify=self._ssl_verify
         )
-        self.git_auth = b64encode(f"{user}:{token}".encode("utf-8")).decode("ascii")
+
         self.verbose: bool = False
 
-        self._observers = {k: [] for k in UpdateType}
-        self._task_id = TaskID(uuid.uuid1().int)
-
-    def add_progress_observer(self, observer: Observer):
-        self._observers[UpdateType.PROGRESS].append(observer)
-
-    def add_message_observer(self, observer: Observer):
-        self._observers[UpdateType.MESSAGE].append(observer)
-
-    def _notify_progress(self, description, task_id=None, *args, **kwargs):
-        for observer in self._observers[UpdateType.PROGRESS]:
-            observer.update(description, task_id, *args, **kwargs)
-
-    def _notify_message(self, message_type: MessageType, message: str):
-        for observer in self._observers[UpdateType.MESSAGE]:
-            observer.update(message_type, message)
-
-    def git_http_config(self) -> list[str]:
-        return [
-            "-c",
-            f"http.extraHeader=Authorization: Basic {self.git_auth}",
-            "-c",
-            f"http.sslVerify={str(self.client.requests.verify).lower()}",
-        ]
+    @property
+    def host(self) -> str:
+        """Compatibility alias used by tests and older call sites."""
+        return self._host
 
     def _to_ssh_url(self, http_url: str) -> str:
         """Convert a Gitea HTTP(S) or SSH repository URL to SSH form.
@@ -92,237 +65,33 @@ class GiteaManager(Manager):
         path = path.rstrip("/")
         if not path.endswith(".git"):
             path += ".git"
-        return f"git@{self.host}:{path.lstrip('/')}"
+        return f"git@{self._host}:{path.lstrip('/')}"
 
-    def _git_env(self) -> dict:
-        """Return an environment dict with interactive git prompts disabled."""
-        env = os.environ.copy()
-        env["GIT_TERMINAL_PROMPT"] = "0"
-        # Prevent SSH from hanging when the server host key is not yet in
-        # known_hosts.  accept-new silently accepts genuinely new keys but
-        # still rejects changed keys (TOFU).  BatchMode=yes makes SSH fail
-        # immediately rather than block if any interactive prompt is needed.
-        env.setdefault(
-            "GIT_SSH_COMMAND",
-            "ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes",
-        )
-        return env
-
-    @retry(
-        stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), reraise=True
-    )
-    def _run_git(
-        self,
-        cmd: list[str],
-        env: dict,
-        context: str,
-    ) -> None:
-        """Run a git command, raising RuntimeError with full detail on failure.
-
-        If *output_callback* is provided, stdout lines are forwarded to it after
-        the command completes.
-
-        If *progress_callback* is provided, the command is run with
-        ``capture_output=True`` and stdout is parsed for JSON progress events
-        emitted by ``git annex get --json --json-progress``:
-
-        - Progress event (``"percentdone"`` key): calls
-          ``progress_callback(file, pct, bytes_done, bytes_total)``.
-        - Completion event (``"success": true``): calls
-          ``progress_callback(file, 100.0, 0, 0)``.
-        - Malformed or non-JSON lines are silently skipped.
-        """
-        if self.verbose:
-            print(f"+ {shlex.join(cmd)}", flush=True)
-
+    def _parse_annex_event_line(self, repo_name: str, line: str) -> None:
+        """Parse one git-annex JSON event line and notify observers if relevant."""
+        line = line.strip()
+        if not line:
+            return
         try:
-            result = subprocess.run(
-                cmd, check=True, capture_output=True, text=True, env=env, timeout=3600
-            )
-        except subprocess.CalledProcessError as e:
-            detail = (
-                f"Command: {' '.join(e.cmd)}\n"
-                f"Stdout: {e.stdout}\n"
-                f"Stderr: {e.stderr}"
-            )
-            raise RuntimeError(f"{context} failed.\n{detail}") from e
+            event = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            return
 
-        self._notify_message(MessageType.INFO, result.stdout)
-
-        for line in result.stdout.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                event = json.loads(line)
-            except (json.JSONDecodeError, ValueError):
-                continue
-
-            if "percentdone" in event and "action" in event:
-                action = event.get("action", {})
-                file = action.get("file", "unknown")
-                bytes_done = int(event.get("bytesdone", 0))
-                bytes_total = int(event.get("bytestotal", 0))
-                self._notify_progress(
-                    f" {file}", total=bytes_total, completed=bytes_done
-                )
-            elif event.get("success") is True and "file" in event:
-                file = event.get("file", "unknown")
-                self._notify_progress(f" {file}", total=0, completed=0)
-
-    def clone_sparse(
-        self,
-        repo_url: str,
-        sparse_paths: list[str],
-        dest: Path,
-    ) -> None:
-        """
-        Shallow sparse clone fetching one or more directory paths in one shot.
-
-        The repository is cloned once into *dest* with ``--filter=blob:none``
-        and ``--no-checkout``, then sparse-checkout (cone mode) is initialised
-        and set to *all* requested paths before a single checkout is performed.
-        This avoids re-cloning for multiple subjects from the same repository.
-
-        If *dest* already contains a valid git repository the clone step is
-        skipped and only the sparse-checkout set is updated before re-checking
-        out (idempotent, safe to call repeatedly).
-
-        Authentication is injected via http.extraHeader.
-
-        Args:
-            repo_url: Repository URL without ``.git`` suffix.  May be a plain
-                      repo URL (e.g. ``…/datasets/whole-spine``) **or** a Gitea
-                      tree URL that pins a specific commit/ref
-                      (e.g. ``…/datasets/whole-spine/tree/0491c0b3…``).  The
-                      ``/tree/<ref>`` segment is stripped before cloning and the
-                      ref is passed to ``git checkout`` so that the working tree
-                      matches the exact snapshot requested.
-            sparse_paths: One or more directory paths inside the repo to check
-                          out (e.g. ``["sub-amuAP", "sub-amuLJ"]``).
-            dest: Local destination directory for the clone.
-
-        Raises:
-            RuntimeError: If any git sub-command fails.
-            ValueError: If *sparse_paths* is empty.
-        """
-        if not sparse_paths:
-            raise ValueError("sparse_paths must contain at least one path")
-
-        # Build the HTTPS clone URL from the normalised host so that
-        # protocol mismatches in the TSV (e.g. bare host or http vs https)
-        # are corrected automatically.
-        #
-        # repo_url may include a Gitea /tree/<ref> suffix
-        # (e.g. ".../whole-spine/tree/0491c0b3...").  Strip it to obtain the
-        # actual repository path and remember the pinned ref separately.
-        parsed_repo = urlparse(repo_url if "://" in repo_url else f"https://{repo_url}")
-        full_path = parsed_repo.path.rstrip("/")
-        tree_marker = "/tree/"
-        tree_idx = full_path.find(tree_marker)
-
-        if tree_idx != -1:
-            pinned_ref: str | None = full_path[tree_idx + len(tree_marker) :]
-            repo_path = full_path[:tree_idx]
-        else:
-            pinned_ref = None
-            repo_path = full_path
-
-        git_url = f"{self._http_base}{repo_path}.git"
-        env = self._git_env()
-        git = ["git"] + self.git_http_config()
-
-        # Extract dataset name from repo_url path
-        dataset_name = repo_path.split("/")[-1] if repo_path else "repository"
-
-        # Clone only if the destination is not already a git repo.
-        if not (dest / ".git").exists():
-            dest.mkdir(parents=True, exist_ok=True)
-
-            self._notify_progress(
-                f"Cloning {dataset_name}...",
-                task_id=self._task_id,
-                completed=0,
-                total=4,
-            )
-            clone_cmd = git + ["clone", "--filter=blob:none", "--no-checkout"]
-            # --depth=1 fetches only HEAD; omit it when a specific commit is
-            # pinned so that the full history is available for checkout.
-            if pinned_ref is None:
-                clone_cmd.append("--depth=1")
-
-            clone_cmd += [git_url, str(dest)]
-            self._run_git(
-                clone_cmd,
-                env=env,
-                context=f"clone '{repo_url}'",
-            )
-
-        # (Re-)configure sparse-checkout with the full set of paths.
-        self._notify_progress(
-            f"Configuring sparse checkout for {dataset_name}...",
-            task_id=self._task_id,
-            completed=1,
-            total=4,
-        )
-        self._run_git(
-            git + ["-C", str(dest), "sparse-checkout", "init", "--cone"],
-            env=env,
-            context=f"sparse-checkout init in '{dest}'",
-        )
-
-        self._notify_progress(
-            f"Setting sparse paths for {dataset_name}...",
-            task_id=self._task_id,
-            completed=2,
-            total=4,
-        )
-        self._run_git(
-            git + ["-C", str(dest), "sparse-checkout", "set"] + sparse_paths,
-            env=env,
-            context=f"sparse-checkout set {sparse_paths} in '{dest}'",
-        )
-
-        self._notify_progress(
-            f"Checking out {dataset_name}...",
-            task_id=self._task_id,
-            completed=3,
-            total=4,
-        )
-        checkout_cmd = git + ["-C", str(dest), "checkout"]
-        if pinned_ref is not None:
-            checkout_cmd.append(pinned_ref)
-
-        self._run_git(
-            checkout_cmd,
-            env=env,
-            context=f"checkout in '{dest}'",
-        )
-
-        self._notify_progress(
-            f"Sparse clone complete for {dataset_name}...",
-            task_id=self._task_id,
-            completed=4,
-            total=4,
-        )
-
-    def get_main_branch_head_commit(self, repo_url: str):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            self.clone_sparse(repo_url, sparse_paths=["."], dest=Path(tmpdir))
-
-            result = subprocess.run(
-                ["git", "-C", tmpdir, "rev-parse", "HEAD"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-
-            return result.stdout.strip()
+        if "percentdone" in event and "action" in event:
+            action = event.get("action", {})
+            file = action.get("file", "unknown")
+            bytes_done = int(event.get("bytesdone", 0))
+            bytes_total = int(event.get("bytestotal", 0))
+            self._notify_file_progress(repo_name, file, bytes_done, bytes_total)
+        elif event.get("success") is True and "file" in event:
+            file = event.get("file", "unknown")
+            self._notify_file_complete(repo_name, file)
 
     def annex_get(
         self,
         repo_dir: Path,
         paths: list[str] | None = None,
+        repo_name: str | None = None,
     ) -> None:
         """
         Fetch git-annex file content for the checked-out sparse paths.
@@ -353,16 +122,16 @@ class GiteaManager(Manager):
            branch into the local ``git-annex`` branch so that location logs are
            available locally.
 
-        6. **``git annex get``** — downloads the actual file content for each
-           requested path. If progress_callback is provided, JSON progress events
-           are parsed and reported via the callback.
+          6. **``git annex get``** — downloads the actual file content for each
+              requested path. JSON progress events are parsed and forwarded to
+              registered :class:`~npdb.cli.observers.DownloadObserver` instances.
 
         Args:
             repo_dir: Root of the cloned git-annex repository.
             paths: Subdirectories or files inside *repo_dir* to fetch.
                    Defaults to everything checked out (``["."]``).
-            progress_callback: Optional callback(file, pct, bytes_done, bytes_total)
-                              for per-file download progress.
+            repo_name: Repository label used for observer notifications. If not
+                       provided, defaults to ``repo_dir.name``.
 
         Raises:
             RuntimeError: If any git-annex sub-command fails.
@@ -370,7 +139,10 @@ class GiteaManager(Manager):
         if paths is None:
             paths = ["."]
 
-        env = self._git_env()
+        if repo_name is None:
+            repo_name = repo_dir.name
+
+        env = self.git_env()
         git = ["git"] + self.git_http_config()
 
         # 1. Fetch the git-annex metadata branch as a proper tracking ref over
@@ -380,12 +152,7 @@ class GiteaManager(Manager):
         #    because the fetch is a plain git operation — no git-annex-shell
         #    needed — and HTTPS + token works here whereas SSH keys are
         #    required for the SSH transport.
-        self._notify_progress(
-            "Fetching git-annex metadata...",
-            task_id=self._task_id,
-            completed=0,
-            total=5,
-        )
+        self._notify_repo_step(repo_name, "Fetching git-annex metadata…", 0, 5)
         self._run_git(
             git
             + [
@@ -403,33 +170,26 @@ class GiteaManager(Manager):
         #    Gitea because content transfer uses git-annex-shell over SSH.
         #    Done after the git-annex branch fetch so that plain-git operations
         #    (which work over HTTPS) are not affected.
-        self._notify_progress(
-            "Configuring remote for git-annex...",
-            task_id=self._task_id,
-            completed=1,
-            total=5,
-        )
+        self._notify_repo_step(repo_name, "Configuring remote for git-annex…", 1, 5)
         get_url_cmd = ["git", "-C", str(repo_dir), "remote", "get-url", "origin"]
-        if self.verbose:
-            print(f"+ {shlex.join(get_url_cmd)}", flush=True)
-        origin_proc = subprocess.run(
-            get_url_cmd, capture_output=True, text=True, env=env
-        )
-        if origin_proc.returncode == 0:
-            ssh_url = self._to_ssh_url(origin_proc.stdout.strip())
+        try:
+            origin_stdout, _ = self._run_git(
+                get_url_cmd,
+                env=env,
+                context=f"get origin URL in '{repo_dir}'",
+            )
+            ssh_url = self._to_ssh_url(origin_stdout.strip())
             self._run_git(
                 ["git", "-C", str(repo_dir), "remote", "set-url", "origin", ssh_url],
                 env=env,
                 context=f"switch origin to SSH in '{repo_dir}'",
             )
+        except RuntimeError:
+            # If origin URL cannot be read, continue with current remote config.
+            pass
 
         # 3. Initialise git-annex in the local clone.
-        self._notify_progress(
-            "Initializing git-annex...",
-            task_id=self._task_id,
-            completed=2,
-            total=5,
-        )
+        self._notify_repo_step(repo_name, "Initializing git-annex…", 2, 5)
         self._run_git(
             ["git", "-C", str(repo_dir), "annex", "init"],
             env=env,
@@ -451,12 +211,7 @@ class GiteaManager(Manager):
         )
 
         # 5. Merge remote location logs into the local git-annex branch.
-        self._notify_progress(
-            "Merging remote location logs...",
-            task_id=self._task_id,
-            completed=3,
-            total=5,
-        )
+        self._notify_repo_step(repo_name, "Merging remote location logs…", 3, 5)
         self._run_git(
             ["git", "-C", str(repo_dir), "annex", "merge"],
             env=env,
@@ -464,12 +219,7 @@ class GiteaManager(Manager):
         )
 
         # 6. Download actual file content.
-        self._notify_progress(
-            "Downloading file content...",
-            task_id=self._task_id,
-            completed=4,
-            total=5,
-        )
+        self._notify_repo_step(repo_name, "Downloading file content…", 4, 5)
         cmd = [
             "git",
             "-C",
@@ -480,15 +230,17 @@ class GiteaManager(Manager):
             "--json-progress",
         ] + paths
 
+        annex_line_parser = None
+        if self._download_observers:
+            annex_line_parser = lambda line: self._parse_annex_event_line(
+                repo_name, line
+            )
+
         self._run_git(
             cmd,
             env=env,
             context=f"git annex get {paths} in '{repo_dir}'",
+            line_parser_hook=annex_line_parser,
         )
 
-        self._notify_progress(
-            "Download complete.",
-            task_id=self._task_id,
-            completed=5,
-            total=5,
-        )
+        self._notify_repo_step(repo_name, "Download complete", 5, 5)
