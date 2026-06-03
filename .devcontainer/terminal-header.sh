@@ -64,3 +64,23 @@ ${_vscode_section}
 ======================================================================
 
 EOF
+
+# ---------------------------------------------------------------------------
+# VPN status — only shown when Wireguard is not configured
+# ---------------------------------------------------------------------------
+_WG_CONFIG="/workspaces/neuropoly-db/wg0.conf"
+if [[ ! -f "$_WG_CONFIG" ]]; then
+  _vpn_pid_file="/tmp/vpn.pid"
+  _vpn_user_file="/tmp/.vpn_connected_user"
+  if [[ -f "$_vpn_pid_file" ]] && [[ -d "/proc/$(cat "$_vpn_pid_file" 2>/dev/null)" ]]; then
+    _vpn_user=$(cat "$_vpn_user_file" 2>/dev/null || echo "unknown")
+    echo -e "  \033[32m\033[1m✓ VPN connected to PolyMTL as ${_vpn_user} — run: vpndisconnect\033[0m"
+    echo ""
+  else
+    echo -e "  \033[1m\033[38;5;214m╔══════════════════════════════════════════════════════╗\033[0m"
+    echo -e "  \033[1m\033[38;5;214m║  ⚠   Not connected to PolyMTL VPN                    ║\033[0m"
+    echo -e "  \033[1m\033[38;5;214m║      Run: vpnconnect                                 ║\033[0m"
+    echo -e "  \033[1m\033[38;5;214m╚══════════════════════════════════════════════════════╝\033[0m"
+    echo ""
+  fi
+fi

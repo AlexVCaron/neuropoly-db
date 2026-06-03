@@ -60,25 +60,6 @@ uv run playwright install chromium --with-deps > /dev/null 2>&1 || {
 }
 echo "   ✓ Playwright system dependencies and browsers ready"
 
-# # Install system packages required by Playwright
-# sudo apt-get update -qq > /dev/null 2>&1 || true
-# sudo apt-get install -qq -y \
-#     libgconf-2-4 \
-#     libnss3 \
-#     libxss1 \
-#     libappindicator1 \
-#     libindicator7 \
-#     xdg-utils \
-#     fonts-liberation \
-#     libasound2 \
-#     > /dev/null 2>&1 || true
-
-# # Install Playwright browsers (uses pre-cached layers if available)
-# python -m playwright install --with-deps chromium > /dev/null 2>&1 || {
-#     echo "   WARNING: Playwright browser installation had issues (may still work)"
-# }
-# echo "   ✓ Playwright system dependencies and browsers ready"
-
 # ── 4. Jupyter kernel ─────────────────────────────────────────────────────
 # Always re-register (fast, <1s). Uses --sys-prefix so the kernel spec lives
 # inside .venv/ and persists with the venv-data volume across rebuilds.
@@ -159,7 +140,82 @@ else
     echo "==> No Wireguard config found at $WG_CONFIG — skipping wg-quick setup."
 fi
 
-# ── 6. git-annex ───────────────────────────────────────────────────────────────
+# ── 7. Openconnect configuration (if wireguard not configured) ──────────────────────────────────────
+# Install openconnect and register the `vpnconnect` shell function so users
+# without a Wireguard config can connect to PolyMTL via the PolyQuartz / Okta
+# interactive flow.  The actual connection is always user-triggered — nothing
+# connects automatically here.
+if [ ! -f "$WG_CONFIG" ]; then
+    echo ""
+    echo "==> No Wireguard config — setting up openconnect (PolyQuartz)..."
+
+    if ! command -v openconnect > /dev/null 2>&1; then
+        sudo apt-get update -qq > /dev/null 2>&1 || true
+        sudo apt-get install -qq -y openconnect > /dev/null 2>&1 || {
+            echo "   WARNING: openconnect installation had issues"
+        }
+        echo "   ✓ openconnect installed"
+    else
+        echo "   ✓ openconnect already available"
+    fi
+
+    # Register vpnconnect in .bashrc (idempotent, same fence pattern as steps 5/5b)
+    VPN_HOOK_BEGIN="# >>> neuropoly vpnconnect >>>"
+    VPN_HOOK_END="# <<< neuropoly vpnconnect <<<"
+    VPN_CONNECT_SCRIPT="/workspaces/neuropoly-db/.devcontainer/connect-vpn.sh"
+
+    if ! grep -Fq "$VPN_HOOK_BEGIN" "$USER_BASHRC"; then
+        {
+            echo ""
+            echo "$VPN_HOOK_BEGIN"
+            echo "# Disable venv's own PS1 modification so we control the entire prompt here."
+            echo "VIRTUAL_ENV_DISABLE_PROMPT=1"
+            echo "export VIRTUAL_ENV_DISABLE_PROMPT"
+            echo "vpnconnect() { bash \"$VPN_CONNECT_SCRIPT\"; }"
+            echo "export -f vpnconnect"
+            echo "vpndisconnect() {"
+            echo "  local _pid_file=/tmp/vpn.pid"
+            echo "  local _user_file=/tmp/.vpn_connected_user"
+            echo "  if [[ -f \"\$_pid_file\" ]] && [[ -d \"/proc/\$(cat \"\$_pid_file\" 2>/dev/null)\" ]]; then"
+            echo "    sudo kill \"\$(cat \"\$_pid_file\")\""
+            echo "    sudo rm -f \"\$_pid_file\" \"\$_user_file\""
+            echo "    echo 'VPN disconnected.'"
+            echo "  else"
+            echo "    echo 'VPN is not connected.'"
+            echo "    sudo rm -f \"\$_pid_file\" \"\$_user_file\""
+            echo "  fi"
+            echo "  __vpn_prompt"
+            echo "}"
+            echo "export -f vpndisconnect"
+            echo "# VPN prompt indicator."
+            echo "# Always reconstructs PS1 from _VPN_BASE_PS1 so [VPN] always appears before"
+            echo "# (.venv), regardless of which was activated first."
+            echo "# VIRTUAL_ENV_DISABLE_PROMPT=1 (above) prevents venv/activate from prepending"
+            echo "# (.venv) itself; we render it here instead."
+            echo "_VPN_PS1_PREFIX=\$'\\001\\033[1m\\002\\001\\033[38;5;214m\\002[VPN]\\001\\033[0m\\002 '"
+            echo "_VPN_BASE_PS1=\"\${_VPN_BASE_PS1:-\$PS1}\""
+            echo "__vpn_prompt() {"
+            echo "  local _ps1=\"\${_VPN_BASE_PS1}\""
+            echo "  if [[ -n \"\${VIRTUAL_ENV}\" ]]; then"
+            echo "    _ps1=\"(\${VIRTUAL_ENV_PROMPT:-\${VIRTUAL_ENV##*/}}) \${_ps1}\""
+            echo "  fi"
+            echo "  if [[ -f /tmp/vpn.pid ]] && [[ -d \"/proc/\$(cat /tmp/vpn.pid 2>/dev/null)\" ]]; then"
+            echo "    _ps1=\"\${_VPN_PS1_PREFIX}\${_ps1}\""
+            echo "  fi"
+            echo "  PS1=\"\${_ps1}\""
+            echo "}"
+            echo "if [[ \"\${PROMPT_COMMAND}\" != *__vpn_prompt* ]]; then"
+            echo "  PROMPT_COMMAND=\"\${PROMPT_COMMAND:+\${PROMPT_COMMAND}; }__vpn_prompt\""
+            echo "fi"
+            echo "$VPN_HOOK_END"
+        } >> "$USER_BASHRC"
+        echo "   Added vpnconnect / vpndisconnect functions to $USER_BASHRC"
+    else
+        echo "   vpnconnect / vpndisconnect functions already present in $USER_BASHRC"
+    fi
+fi
+
+# ── 8. git-annex ───────────────────────────────────────────────────────────────
 
 echo ""
 echo "==> Checking git-annex availability..."
@@ -173,7 +229,7 @@ else
     echo "   ✓ git-annex already available"
 fi
 
-# ── 6. Summary ────────────────────────────────────────────────────────────
+# ── 9. Summary ────────────────────────────────────────────────────────────
 echo ""
 echo "──────────────────────────────────────────────────────────"
 echo " ✅  Setup complete"
