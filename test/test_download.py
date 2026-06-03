@@ -5,6 +5,7 @@ All network I/O (git subprocesses, httpx, gitea client) is mocked so that
 these tests run without any server access.
 """
 
+import io
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -224,6 +225,26 @@ class TestGitHttpConfig:
         assert "http.sslVerify=false" in joined
 
 
+class TestGitEnv:
+    """git_env must disable interactive credential helpers."""
+
+    def test_overrides_vscode_askpass(self, manager, monkeypatch):
+        monkeypatch.setenv("GIT_ASKPASS", "/tmp/vscode-askpass.sh")
+        monkeypatch.setenv("VSCODE_GIT_ASKPASS_NODE", "node")
+        monkeypatch.setenv("VSCODE_GIT_ASKPASS_MAIN", "main.js")
+        monkeypatch.setenv("VSCODE_GIT_ASKPASS_EXTRA_ARGS", "")
+
+        env = manager.git_env()
+
+        assert env["GIT_TERMINAL_PROMPT"] == "0"
+        assert env["GIT_ASKPASS"] == "/bin/echo"
+        assert env["SSH_ASKPASS"] == "/bin/echo"
+        assert env["GCM_INTERACTIVE"] == "never"
+        assert "VSCODE_GIT_ASKPASS_NODE" not in env
+        assert "VSCODE_GIT_ASKPASS_MAIN" not in env
+        assert "VSCODE_GIT_ASKPASS_EXTRA_ARGS" not in env
+
+
 # ---------------------------------------------------------------------------
 # GiteaManager — clone_sparse
 # ---------------------------------------------------------------------------
@@ -306,10 +327,11 @@ class TestCloneSparse:
 
     def test_subprocess_failure_raises_runtime_error(self, manager, tmp_path):
         dest = tmp_path / "repo"
-        err = subprocess.CalledProcessError(
-            128, ["git", "clone"], output=b"", stderr=b"fatal: repo not found"
-        )
-        with patch("subprocess.run", side_effect=err):
+        popen_proc = MagicMock()
+        popen_proc.stdout = io.StringIO("")
+        popen_proc.stderr = io.StringIO("fatal: repo not found\n")
+        popen_proc.wait.return_value = 128
+        with patch("subprocess.Popen", return_value=popen_proc):
             with pytest.raises(RuntimeError, match="failed"):
                 manager.clone_sparse(
                     "https://data.neuro.polymtl.ca/datasets/ds",
@@ -330,18 +352,19 @@ class TestAnnexGet:
         """Helper: run annex_get with all subprocess calls mocked."""
         repo_dir = tmp_path / "repo"
         repo_dir.mkdir()
-
-        # subprocess.run is used for the initial remote get-url probe
-        # _run_git uses subprocess.run internally
         https_url = "https://data.neuro.polymtl.ca/datasets/whole-spine.git"
 
-        def fake_run(cmd, **kwargs):
-            result = MagicMock(returncode=0)
+        def fake_popen(cmd, **kwargs):
+            proc = MagicMock()
             if "get-url" in cmd:
-                result.stdout = https_url
-            return result
+                proc.stdout = io.StringIO(https_url + "\n")
+            else:
+                proc.stdout = io.StringIO("")
+            proc.stderr = io.StringIO("")
+            proc.wait.return_value = 0
+            return proc
 
-        with patch("subprocess.run", side_effect=fake_run):
+        with patch("subprocess.Popen", side_effect=fake_popen):
             manager.annex_get(repo_dir, paths)
 
         return repo_dir
@@ -352,15 +375,18 @@ class TestAnnexGet:
         https_url = "https://data.neuro.polymtl.ca/datasets/whole-spine.git"
         captured = []
 
-        def fake_run(cmd, **kwargs):
+        def fake_popen(cmd, **kwargs):
             captured.append(list(cmd))
-            result = MagicMock(returncode=0)
+            proc = MagicMock()
             if "get-url" in cmd:
-                result.stdout = https_url
-                result.returncode = 0
-            return result
+                proc.stdout = io.StringIO(https_url + "\n")
+            else:
+                proc.stdout = io.StringIO("")
+            proc.stderr = io.StringIO("")
+            proc.wait.return_value = 0
+            return proc
 
-        with patch("subprocess.run", side_effect=fake_run):
+        with patch("subprocess.Popen", side_effect=fake_popen):
             manager.annex_get(repo_dir, paths)
 
         return captured
@@ -429,12 +455,16 @@ class TestAnnexGet:
 
         def fake_run(cmd, **kwargs):
             captured.append(list(cmd))
-            result = MagicMock(returncode=0)
+            proc = MagicMock()
             if "get-url" in cmd:
-                result.stdout = ssh_origin
-            return result
+                proc.stdout = io.StringIO(ssh_origin + "\n")
+            else:
+                proc.stdout = io.StringIO("")
+            proc.stderr = io.StringIO("")
+            proc.wait.return_value = 0
+            return proc
 
-        with patch("subprocess.run", side_effect=fake_run):
+        with patch("subprocess.Popen", side_effect=fake_run):
             manager.annex_get(repo_dir, ["sub-amuAP"])
 
         set_url_cmds = [c for c in captured if "set-url" in c]
@@ -519,7 +549,6 @@ class TestDownloadSubjects:
             "https://data.neuro.polymtl.ca/datasets/whole-spine",
             ["sub-amuAP"],
             tmp_path / "whole-spine",
-            step_callback=None,
         )
 
     def test_multiple_subjects_same_repo_cloned_once(self, dnp, tmp_path):
