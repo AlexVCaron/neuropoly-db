@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from npdb.annotation.preflight import PreflightError, check_bids_suffixes
 from npdb.external.neurobagel.errors import BagelCLIError
