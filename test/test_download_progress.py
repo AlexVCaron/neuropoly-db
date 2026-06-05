@@ -7,7 +7,6 @@ and download_subjects on_repo_done notifications.
 
 import io
 import json
-import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -395,6 +394,23 @@ class TestDownloadSubjectsObserver:
 
         obs.on_repo_done.assert_called_once_with("whole-spine", False)
         assert results[0][0] is False
+
+    def test_on_repo_error_fired_on_error(self, tmp_path):
+        dnp = self._make_manager()
+        obs = MagicMock(spec=DownloadObserver)
+        dnp.add_download_observer(obs)
+        subjects = [
+            (
+                "https://data.neuro.polymtl.ca/datasets/whole-spine",
+                "sub-amuAP",
+                "whole-spine",
+            )
+        ]
+
+        with patch.object(dnp, "clone_sparse", side_effect=RuntimeError("clone boom")):
+            dnp.download_subjects(subjects, tmp_path, use_annex=False)
+
+        obs.on_repo_error.assert_called_once_with("whole-spine", "clone boom")
 
     def test_on_repo_done_fired_per_unique_repo(self, tmp_path):
         dnp = self._make_manager()

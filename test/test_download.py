@@ -540,7 +540,9 @@ class TestDownloadSubjects:
             ),
         ]
         with patch.object(dnp, "clone_sparse") as mock_clone:
-            results = dnp.download_subjects(subjects, tmp_path, use_annex=False)
+            results = dnp.download_subjects(
+                subjects, tmp_path, use_annex=False, derivatives=False
+            )
 
         assert len(results) == 1
         ok, label, msg = results[0]
@@ -570,7 +572,9 @@ class TestDownloadSubjects:
             ),
         ]
         with patch.object(dnp, "clone_sparse") as mock_clone:
-            results = dnp.download_subjects(subjects, tmp_path, use_annex=False)
+            results = dnp.download_subjects(
+                subjects, tmp_path, use_annex=False, derivatives=False
+            )
 
         # Only one clone call despite three subjects
         assert mock_clone.call_count == 1
@@ -626,12 +630,17 @@ class TestDownloadSubjects:
             patch.object(dnp, "clone_sparse"),
             patch.object(dnp, "annex_get") as mock_annex,
         ):
-            dnp.download_subjects(subjects, tmp_path, use_annex=True)
+            dnp.download_subjects(subjects, tmp_path, use_annex=True, derivatives=False)
 
-        mock_annex.assert_called_once()
-        repo_dir, paths = mock_annex.call_args.args
+        mock_annex.assert_called()
+        assert mock_annex.call_count == 2
+        repo_dir, paths = mock_annex.call_args_list[0].args
         assert repo_dir == tmp_path / "whole-spine"
         assert set(paths) == {"sub-amuAP", "sub-amuLJ"}
+        (repo_dir,) = mock_annex.call_args_list[1].args
+        assert repo_dir == tmp_path / "whole-spine"
+        assert "includes" in mock_annex.call_args_list[1].kwargs
+        assert mock_annex.call_args_list[1].kwargs["includes"] == []
 
     def test_annex_get_not_called_without_use_annex(self, dnp, tmp_path):
         subjects = [
