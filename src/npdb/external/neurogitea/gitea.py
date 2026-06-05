@@ -103,6 +103,7 @@ class GiteaManager(GitManager):
         repo_dir: Path,
         paths: list[str] | None = None,
         repo_name: str | None = None,
+        data_class: str | None = None,
         includes: list[str] | None = None,
     ) -> None:
         """
@@ -144,6 +145,8 @@ class GiteaManager(GitManager):
                    Defaults to everything checked out (``["."]``).
             repo_name: Repository label used for observer notifications. If not
                        provided, defaults to ``repo_dir.name``.
+            data_class: Optional data class label (e.g. "raw", "derivatives") to
+                        include in observer notifications.
             includes: Optional list of git-annex include patterns to limit the
                       set of files considered for download.  If not provided, all
                       files in the requested paths are considered.
@@ -234,7 +237,11 @@ class GiteaManager(GitManager):
         )
 
         # 6. Download actual file content.
-        self._notify_repo_step(repo_name, "Downloading file content…", 4, 5)
+        data_label = f" ({data_class}) " if data_class else ""
+        self._notify_repo_step(
+            repo_name, f"Downloading file content{data_label}…", 4, 5
+        )
+
         cmd = [
             "git",
             "-C",

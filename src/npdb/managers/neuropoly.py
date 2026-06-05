@@ -144,10 +144,13 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
                         filter(lambda p: not p.startswith("derivatives/"), sparse_paths)
                     )
 
-                    self.annex_get(dest, sparse_paths, repo_name=dataset_name)
+                    self.annex_get(
+                        dest, sparse_paths, repo_name=dataset_name, data_class="raw"
+                    )
                     self.annex_get(
                         dest,
                         repo_name=dataset_name,
+                        data_class="derivatives",
                         includes=includes,
                     )
                 results.append((True, label, "OK"))
