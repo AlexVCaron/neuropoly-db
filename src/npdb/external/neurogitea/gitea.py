@@ -87,11 +87,24 @@ class GiteaManager(GitManager):
             file = event.get("file", "unknown")
             self._notify_file_complete(repo_name, file)
 
+    def _annex_include_args(self, includes: list[str] | None) -> list[str]:
+        """Build git-annex include predicates as separate CLI args."""
+        if not includes:
+            return []
+        args: list[str] = []
+        for i, inc in enumerate(includes):
+            if i > 0:
+                args.append("--or")
+            args.extend(["--include", inc])
+        return args
+
     def annex_get(
         self,
         repo_dir: Path,
         paths: list[str] | None = None,
         repo_name: str | None = None,
+        data_class: str | None = None,
+        includes: list[str] | None = None,
     ) -> None:
         """
         Fetch git-annex file content for the checked-out sparse paths.
@@ -132,6 +145,11 @@ class GiteaManager(GitManager):
                    Defaults to everything checked out (``["."]``).
             repo_name: Repository label used for observer notifications. If not
                        provided, defaults to ``repo_dir.name``.
+            data_class: Optional data class label (e.g. "raw", "derivatives") to
+                        include in observer notifications.
+            includes: Optional list of git-annex include patterns to limit the
+                      set of files considered for download.  If not provided, all
+                      files in the requested paths are considered.
 
         Raises:
             RuntimeError: If any git-annex sub-command fails.
@@ -219,7 +237,11 @@ class GiteaManager(GitManager):
         )
 
         # 6. Download actual file content.
-        self._notify_repo_step(repo_name, "Downloading file content…", 4, 5)
+        data_label = f" ({data_class}) " if data_class else ""
+        self._notify_repo_step(
+            repo_name, f"Downloading file content{data_label}…", 4, 5
+        )
+
         cmd = [
             "git",
             "-C",
@@ -228,7 +250,9 @@ class GiteaManager(GitManager):
             "get",
             "--json",
             "--json-progress",
-        ] + paths
+        ]
+        cmd += self._annex_include_args(includes)
+        cmd += paths
 
         annex_line_parser = None
         if self._download_observers:

@@ -160,6 +160,13 @@ def capture_stdout(callback: Callable[[str], None]) -> Generator[None, None, Non
 # ---------------------------------------------------------------------------
 
 _MAX_FILE_LINES = 8  # max file-progress lines shown per repo panel
+_MAX_ERROR_LINES = 8  # max error lines shown per repo panel
+
+
+def _progress_bar(pct: int, width: int) -> str:
+    pct = max(0, min(100, pct))
+    filled = int(pct * width / 100)
+    return "█" * filled + "░" * (width - filled)
 
 
 @dataclass
@@ -190,13 +197,13 @@ class RepoState:
     status: StepStatus = StepStatus.RUNNING
     files: dict = field(default_factory=dict)  # str → _FileState
     file_order: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
 
     def _step_bar(self) -> str:
         if self.total_steps <= 0:
             return self.current_step or "Starting…"
         pct = int(self.step_num * 100 / self.total_steps)
-        filled = int(pct * 28 / 100)
-        bar = "█" * filled + "░" * (28 - filled)
+        bar = _progress_bar(pct, 28)
         return f"{bar}  {pct:3d}%  {self.current_step}"
 
     def __rich__(self):
@@ -214,11 +221,14 @@ class RepoState:
                 lines.append(f"  ✅ {short}")
             elif fs.bytes_total > 0:
                 fpct = int(fs.bytes_done * 100 / fs.bytes_total)
-                ffilled = int(fpct * 20 / 100)
-                fbar = "█" * ffilled + "░" * (20 - ffilled)
+                fbar = _progress_bar(fpct, 20)
                 lines.append(f"  {fbar}  {fpct:3d}%  {short}")
             else:
                 lines.append(f"  ➳ {short}")
+
+        if self.errors:
+            lines.append("  ── errors ──")
+            lines.extend(f"  {line}" for line in self.errors[-_MAX_ERROR_LINES:])
 
         body = "\n".join(lines)
 
@@ -307,3 +317,11 @@ class RepoDownloadDisplay(DownloadObserver):
         with self._lock:
             state = self._get_or_create(repo)
             state.status = StepStatus.SUCCESS if success else StepStatus.FAILURE
+
+    def on_repo_error(self, repo: str, message: str) -> None:
+        with self._lock:
+            state = self._get_or_create(repo)
+            for line in str(message).splitlines():
+                line = line.strip()
+                if line:
+                    state.errors.append(line)
