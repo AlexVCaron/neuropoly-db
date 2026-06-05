@@ -176,14 +176,21 @@ class GitManager(Manager):
         # (Re-)configure sparse-checkout with the full set of paths.
         self._notify_repo_step(repo_name, "Configuring sparse checkout…", 1, 4)
         self._run_git(
-            git + ["-C", str(dest), "sparse-checkout", "init", "--cone"],
+            git + ["-C", str(dest), "sparse-checkout", "init", "--no-cone"],
             env=env,
             context=f"sparse-checkout init in '{dest}'",
         )
 
         self._notify_repo_step(repo_name, "Setting sparse paths…", 2, 4)
         self._run_git(
-            git + ["-C", str(dest), "sparse-checkout", "set"] + sparse_paths,
+            git
+            + [
+                "-C",
+                str(dest),
+                "sparse-checkout",
+                "set",
+            ]  # "--skip-checks"]
+            + sparse_paths,
             env=env,
             context=f"sparse-checkout set {sparse_paths} in '{dest}'",
         )
@@ -210,6 +217,10 @@ class GitManager(Manager):
     def _notify_repo_done(self, repo: str, success: bool) -> None:
         for obs in self._download_observers:
             obs.on_repo_done(repo, success)
+
+    def _notify_repo_error(self, repo: str, message: str) -> None:
+        for obs in self._download_observers:
+            obs.on_repo_error(repo, message)
 
     @retry(
         stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), reraise=True

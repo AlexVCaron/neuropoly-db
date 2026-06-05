@@ -36,3 +36,7 @@ class DownloadObserver(Protocol):
     def on_repo_done(self, repo: str, success: bool) -> None:
         """Called when all operations for *repo* have completed or failed."""
         ...
+
+    def on_repo_error(self, repo: str, message: str) -> None:
+        """Called when an error occurs while processing *repo*."""
+        ...

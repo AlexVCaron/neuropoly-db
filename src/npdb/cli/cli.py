@@ -270,6 +270,11 @@ def download(
         help="Use git-annex for downloading files (for large datasets indexed on git).",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
+    derivatives: bool = typer.Option(
+        True,
+        help="Download derivatives associated to the raw input data in each repository (git mode only).",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
     output_dir: Path = typer.Option(
         Path.cwd(),
         "--output-dir",
@@ -414,6 +419,7 @@ def download(
             subjects,
             output_dir,
             use_annex=git_annex,
+            derivatives=derivatives,
         )
 
     failed = sum(1 for ok, _, _ in results if not ok)
