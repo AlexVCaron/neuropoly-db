@@ -15,6 +15,21 @@ Follow the instructions below to configure your account on the [neurogitea websi
 
 **On your computer (or the one you want to give access to NeuroGitea) :**
 
+0. First, verify if your machine is not already registered with NeuroGitea. Activate the VPN if not already done, then run the following command in your terminal:
+
+   ```bash
+   ssh git@data.neuro.polymtl.ca
+   ```
+
+   If successful, you'll see the following message :
+
+   ```text
+   PTY allocation request failed
+   Hi there, "$USER"! You've successfully authenticated with the key named "$EMAIL", but Gitea does not provide shell access.
+   If this is unexpected, please log in with password and setup Gitea under another user.
+   Shared connection to data.neuro.polymtl.ca closed.
+   ```
+
 1. Verify if you already own a valid SSH key by running the following command in your terminal:
 
    ```bash
@@ -41,7 +56,7 @@ Follow the instructions below to configure your account on the [neurogitea websi
 
    ![NeuroGitea add SSH key](../assets/neurogitea_token/neurogitea_add_ssh_key.png)
 
-5. Copy the **public key** (aka `id_ed25519.pub`) from your computer and paste it in the **`content`** field on the NeuroGitea website. **Either naviaguate to `~/.ssh`,open the file with a text editor and copy its content, or copy the value from the terminal after running :**
+5. Copy the **public key** (`id_ed25519.pub`, or the name you chose above) from your computer and paste it in the **`content`** field on the NeuroGitea website. **Either naviaguate to `~/.ssh`, open the file with a text editor and copy its content, or copy the value from the terminal after running :**
 
    ```bash
    cat ~/.ssh/id_ed25519.pub
