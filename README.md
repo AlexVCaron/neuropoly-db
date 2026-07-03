@@ -2,12 +2,22 @@
 
 This repository hosts a collection of tools to interact with **metadata contained in the several NEUROPOLY databases**.
 
+- Streamlined setup of [NeuroBagel](https://neurobagel.org) nodes
 - Parsing and standardization of [BIDS](https://bids.neuroimaging.io) datasets
-- Automatic conversion of BIDS datasets for ingestion in a [NeuroBagel](https://neurobagel.org) graph database
-- Automated download of [NeuroGitea](https://data.neuro.polymtl.ca) datasets from [NeuroBagel](https://neurobagel.org) queries
+- Automatic conversion of BIDS datasets to [NeuroBagel](https://neurobagel.org)
+- Automated download from [NeuroBagel](https://neurobagel.org) queries
+  - Support `http(s)`, `git` and `git-annex` protocols
 
-> _Main Goal_
-> Provide exploration tools into every database, agnostic to the data structure (standard) and management software (e.g. DataLad, Git, etc.) used to store the data.
+## Contents
+
+- [`npdb` command line tool](#npdb-command-line-tool)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Usage guides](#usage-guides)
+  - [Commands](#commands)
+  - [Developer guide](#developer-guide)
+    - [Developer installation](#developer-installation)
+    - [Components](#components)
 
 ## `npdb` command line tool
 
