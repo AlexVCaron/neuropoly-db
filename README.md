@@ -75,9 +75,7 @@ All `npdb` commands are **interactive by default** and require user input to pro
 
 ### Usage guides
 
-- [**Download BIDS datasets from NeuroGitea using NeuroBagel queries**](./docs/npdb/download/guides/neurobagel_query.md)
-
-  This guide explains how to :
+[This guide](./docs/npdb/download/guides/neurobagel_query.md) explains how to :
   
   - **query datasets** using the `NeuroBagel` web interface,
   - **save the query results** to file and interpret them,
