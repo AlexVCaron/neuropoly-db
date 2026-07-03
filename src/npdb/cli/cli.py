@@ -3,6 +3,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 import typer
@@ -248,6 +249,52 @@ def _fetch_url(url: str, dest: Path, timeout: int = 300) -> tuple[bool, str]:
         return False, str(exc)
 
 
+def _is_http_url(value: str) -> bool:
+    return value.startswith(("http://", "https://"))
+
+
+def _normalize_repo_url_for_git(repo_url: str) -> str:
+    parsed = urlparse(repo_url if "://" in repo_url else f"https://{repo_url}")
+    repo_path = parsed.path.rstrip("/")
+    tree_idx = repo_path.find("/tree/")
+    if tree_idx != -1:
+        repo_path = repo_path[:tree_idx]
+    if not repo_path.endswith(".git"):
+        repo_path += ".git"
+    return f"{parsed.scheme}://{parsed.netloc}{repo_path}"
+
+
+def _repo_has_git_annex(gitea_manager, repo_url: str) -> bool:
+    git_url = _normalize_repo_url_for_git(repo_url)
+    cmd = (
+        ["git"]
+        + gitea_manager.git_http_config()
+        + ["ls-remote", "--heads", git_url, "refs/heads/git-annex"]
+    )
+
+    try:
+        stdout, _ = gitea_manager._run_git(
+            cmd,
+            env=gitea_manager.git_env(),
+            context=f"probe git-annex metadata branch for '{repo_url}'",
+        )
+    except RuntimeError:
+        return False
+
+    return bool(stdout.strip())
+
+
+def _looks_like_non_git_repo_error(message: str) -> bool:
+    lowered = message.lower()
+    patterns = [
+        "not a git repository",
+        "does not appear to be a git repository",
+        "fatal: repository",
+        "repository not found",
+    ]
+    return any(p in lowered for p in patterns)
+
+
 @npdb.command("download")
 def download(
     query_results: Path = typer.Argument(
@@ -257,18 +304,6 @@ def download(
         file_okay=True,
         dir_okay=False,
         resolve_path=True,
-    ),
-    git: bool = typer.Option(
-        False,
-        "--git",
-        help="Download using git (for datasets indexed on git).",
-        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
-    ),
-    git_annex: bool = typer.Option(
-        False,
-        "--git-annex",
-        help="Use git-annex for downloading files (for large datasets indexed on git).",
-        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
     derivatives: bool = typer.Option(
         True,
@@ -288,7 +323,7 @@ def download(
     max_workers: int = typer.Option(
         4,
         "--max-workers",
-        help="Maximum parallel downloads (URL mode only).",
+        help="Maximum parallel HTTP downloads.",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
     verify_ssl: bool = typer.Option(
@@ -308,21 +343,18 @@ def download(
     """
     [bold]Download imaging data from query results TSV[/bold]
 
-    This command reads a TSV file containing query results and downloads the
-    associated imaging data using one of three modes:
+    This command reads a TSV file containing query results and automatically
+    selects the download protocol per dataset:
 
-    * [cyan]URL mode (default):[/cyan] Reads the [bold]AccessLink[/bold] column and downloads
-      each URL in parallel using HTTP.
-    * [cyan]Git mode[/cyan] ([bold]--git[/bold]): Performs an authenticated shallow sparse-checkout
-      clone from the [bold]RepositoryURL[/bold] column.  Requires [bold]NP_GITEA_APP_URL[/bold],
-      [bold]NP_GITEA_APP_USER[/bold] and [bold]NP_GITEA_APP_TOKEN[/bold] environment variables.
-    * [cyan]Git-annex mode[/cyan] ([bold]--git[/bold] [bold]--git-annex[/bold]): Same as git mode, but
-      also runs [bold]git annex get[/bold] after cloning.
+    * [cyan]HTTP:[/cyan] If [bold]AccessLink[/bold] is present for the dataset, download from
+      link(s) directly.
+    * [cyan]Git:[/cyan] Otherwise, clone from [bold]RepositoryURL[/bold] with sparse checkout.
+    * [cyan]Git-annex:[/cyan] If the repository exposes a [bold]git-annex[/bold] branch,
+      run annex content retrieval after git checkout.
+
+    Git operations require [bold]NP_GITEA_APP_URL[/bold], [bold]NP_GITEA_APP_USER[/bold],
+    and [bold]NP_GITEA_APP_TOKEN[/bold] environment variables.
     """
-    if git_annex and not git:
-        typer.echo("Error: --git-annex requires --git.", err=True)
-        raise typer.Exit(code=1)
-
     try:
         rows = _read_download_tsv(query_results)
     except (OSError, ValueError) as exc:
@@ -331,31 +363,33 @@ def download(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if not git:
-        seen_urls: set[str] = set()
-        jobs: list[tuple[str, Path, str, str]] = []
-        for row in rows:
-            url = (row.get("AccessLink") or "").strip()
-            if not url or not url.startswith(("http://", "https://")):
-                continue
-            if url in seen_urls:
-                continue
-            seen_urls.add(url)
-            dataset = (row.get("DatasetName") or "unknown").strip()
-            subject = (row.get("SubjectID") or "unknown").strip()
-            filename = os.path.basename(url.split("?")[0]) or f"{subject}.bin"
-            dest = output_dir / dataset / subject / filename
-            jobs.append((url, dest, dataset, subject))
+    datasets_with_http: set[str] = set()
+    seen_urls: set[str] = set()
+    http_jobs: list[tuple[str, Path, str, str]] = []
 
-        if not jobs:
-            typer.echo("Warning: No valid AccessLink URLs found in TSV.", err=True)
-            return
+    for row in rows:
+        dataset = (row.get("DatasetName") or "unknown").strip()
+        subject = (row.get("SubjectID") or "unknown").strip()
+        url = (row.get("AccessLink") or "").strip()
+        if not _is_http_url(url):
+            continue
+        datasets_with_http.add(dataset)
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        filename = os.path.basename(url.split("?")[0]) or f"{subject}.bin"
+        dest = output_dir / dataset / subject / filename
+        http_jobs.append((url, dest, dataset, subject))
 
-        typer.echo(f"Downloading {len(jobs)} file(s) ({max_workers} workers)...")
+    http_failures = 0
+    if http_jobs:
+        typer.echo(
+            f"Downloading {len(http_jobs)} file(s) via HTTP ({max_workers} workers)..."
+        )
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
                 pool.submit(_fetch_url, url, dest): (dataset, subject)
-                for url, dest, dataset, subject in jobs
+                for url, dest, dataset, subject in http_jobs
             }
             with Progress(
                 SpinnerColumn(),
@@ -364,70 +398,105 @@ def download(
                 TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
                 transient=True,
             ) as progress:
-                task = progress.add_task("Downloading...", total=len(futures))
+                task = progress.add_task(
+                    "Downloading HTTP links...", total=len(futures)
+                )
                 for future in as_completed(futures):
                     ok, msg = future.result()
                     dataset, subject = futures[future]
                     typer.echo(
                         f"{'SUCCESS' if ok else 'FAIL'} {dataset}/{subject}: {msg}"
                     )
+                    if not ok:
+                        http_failures += 1
                     progress.advance(task)
 
-        typer.echo("Download complete!")
-        return
-
-    load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
-
-    try:
-        if verbose:
-            typer.echo("Initializing Gitea manager...")
-        gitea_manager = GiteaManagerFactory.create_from_env(ssl_verify=verify_ssl)
-        if verbose:
-            typer.echo("Gitea manager initialized successfully.")
-    except ValueError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(code=1)
-
-    gitea_manager.verbose = verbose
+        typer.echo("HTTP download phase complete.")
 
     subjects: list[tuple[str, str, str]] = []
     for row in rows:
+        dataset = (row.get("DatasetName") or "unknown").strip()
+        if dataset in datasets_with_http:
+            continue
         repo_url = (row.get("RepositoryURL") or "").strip()
         imaging_path = (row.get("ImagingSessionPath") or "").strip()
-        dataset = (row.get("DatasetName") or "unknown").strip()
         if not repo_url or not imaging_path:
             continue
         subjects.append((repo_url, imaging_path, dataset))
 
-    if not subjects:
+    git_failures = 0
+    if subjects:
+        load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+
+        try:
+            if verbose:
+                typer.echo("Initializing Gitea manager...")
+            gitea_manager = GiteaManagerFactory.create_from_env(ssl_verify=verify_ssl)
+            if verbose:
+                typer.echo("Gitea manager initialized successfully.")
+        except ValueError as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(code=1)
+
+        gitea_manager.verbose = verbose
+
+        grouped: dict[tuple[str, str], list[str]] = {}
+        for repo_url, sparse_path, dataset in subjects:
+            key = (repo_url, dataset)
+            if key not in grouped:
+                grouped[key] = []
+            if sparse_path not in grouped[key]:
+                grouped[key].append(sparse_path)
+
         typer.echo(
-            "Warning: No rows with both RepositoryURL and ImagingSessionPath found.",
+            "Downloading via git auto-selection "
+            f"({len(subjects)} paths across {len(grouped)} repo(s))..."
+        )
+
+        display = RepoDownloadDisplay()
+        gitea_manager.add_download_observer(display)
+
+        with Live(display, refresh_per_second=4, transient=False):
+            for (repo_url, dataset), sparse_paths in grouped.items():
+                use_annex = _repo_has_git_annex(gitea_manager, repo_url)
+                if verbose:
+                    protocol = "git + git-annex" if use_annex else "git"
+                    typer.echo(f"Protocol for {dataset}: {protocol}")
+
+                results = gitea_manager.download_subjects(
+                    [(repo_url, p, dataset) for p in sparse_paths],
+                    output_dir,
+                    use_annex=use_annex,
+                    derivatives=derivatives,
+                )
+
+                for ok, label, message in results:
+                    if ok:
+                        continue
+                    git_failures += 1
+                    if _looks_like_non_git_repo_error(message):
+                        typer.echo(
+                            f"FAIL {label}: RepositoryURL is not a git repository.",
+                            err=True,
+                        )
+                    else:
+                        typer.echo(f"FAIL {label}: {message}", err=True)
+
+    if not http_jobs and not subjects:
+        typer.echo(
+            "Warning: No download targets found in TSV (no valid AccessLink or git imaging rows).",
             err=True,
         )
         return
 
-    mode_label = "git + git-annex" if git_annex else "git sparse-checkout"
-    unique_repos = len({(r, d) for r, _, d in subjects})
-    typer.echo(
-        f"Downloading via {mode_label} ({len(subjects)} paths across {unique_repos} repo(s))..."
-    )
-
-    display = RepoDownloadDisplay()
-    gitea_manager.add_download_observer(display)
-    with Live(display, refresh_per_second=4, transient=False):
-        results = gitea_manager.download_subjects(
-            subjects,
-            output_dir,
-            use_annex=git_annex,
-            derivatives=derivatives,
+    if git_failures or http_failures:
+        typer.echo(
+            f"Download completed with failures (HTTP: {http_failures}, git: {git_failures}).",
+            err=True,
         )
-
-    failed = sum(1 for ok, _, _ in results if not ok)
-    if failed:
-        typer.echo(f"{failed} download(s) failed.", err=True)
         raise typer.Exit(code=1)
 
-    typer.echo("Git download complete!")
+    typer.echo("Download complete!")
 
 
 standardize = typer.Typer(
