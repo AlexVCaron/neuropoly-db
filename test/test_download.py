@@ -828,38 +828,22 @@ class TestDownloadCLI:
         assert result.exit_code == 0
         assert "download" in result.stdout.lower()
 
-    def test_git_annex_without_git_flag_errors(self, tmp_path):
-        tsv = _write_tsv(tmp_path, [_make_row()])
-        result = runner.invoke(
-            npdb, ["download", str(tsv), "--git-annex", "--output-dir", str(tmp_path)]
-        )
-        assert result.exit_code != 0
-        assert "--git-annex requires --git" in result.output
-
-    def test_missing_env_vars_in_git_mode_errors(self, tmp_path):
-        tsv = _write_tsv(tmp_path, [_make_row()])
+    def test_missing_env_vars_when_git_is_needed_errors(self, tmp_path):
+        tsv = _write_tsv(tmp_path, [_make_row(AccessLink="")])
         with (
             patch("npdb.cli.cli.load_dotenv"),
             patch.dict("os.environ", {}, clear=True),
         ):
             result = runner.invoke(
                 npdb,
-                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+                ["download", str(tsv), "--output-dir", str(tmp_path)],
             )
         assert result.exit_code != 0
         assert "NP_GITEA_APP_URL" in result.output
 
-    # ── Mode 1: URL downloads ────────────────────────────────────────────
+    # ── HTTP protocol ─────────────────────────────────────────────────────
 
-    def test_url_mode_no_valid_links_warns(self, tmp_path):
-        tsv = _write_tsv(tmp_path, [_make_row(AccessLink="")])
-        result = runner.invoke(
-            npdb, ["download", str(tsv), "--output-dir", str(tmp_path)]
-        )
-        assert result.exit_code == 0
-        assert "No valid AccessLink" in result.output
-
-    def test_url_mode_dispatches_fetch(self, tmp_path):
+    def test_http_protocol_dispatches_fetch(self, tmp_path):
         tsv = _write_tsv(
             tmp_path, [_make_row(AccessLink="https://example.com/data/file.nii.gz")]
         )
@@ -877,7 +861,7 @@ class TestDownloadCLI:
         assert result.exit_code == 0
         assert "Download complete" in result.output
 
-    def test_url_mode_deduplicates_identical_links(self, tmp_path):
+    def test_http_protocol_deduplicates_identical_links(self, tmp_path):
         row = _make_row(AccessLink="https://example.com/file.nii.gz")
         tsv = _write_tsv(tmp_path, [row, row])
 
@@ -894,22 +878,27 @@ class TestDownloadCLI:
 
         assert mock_stream.call_count == 1
 
-    # ── Mode 2: git sparse-checkout ──────────────────────────────────────
+    # ── git / git-annex auto-selection ───────────────────────────────────
 
-    def test_git_mode_calls_download_subjects(self, tmp_path):
+    def test_git_protocol_calls_download_subjects_when_no_accesslink(self, tmp_path):
         tsv = _write_tsv(
             tmp_path,
             [
-                _make_row(SubjectID="sub-amuAP", ImagingSessionPath="sub-amuAP"),
-                _make_row(SubjectID="sub-amuLJ", ImagingSessionPath="sub-amuLJ"),
+                _make_row(
+                    SubjectID="sub-amuAP", ImagingSessionPath="sub-amuAP", AccessLink=""
+                ),
+                _make_row(
+                    SubjectID="sub-amuLJ", ImagingSessionPath="sub-amuLJ", AccessLink=""
+                ),
                 # phenotypic row (no ImagingSessionPath) — must be filtered out
-                _make_row(SubjectID="sub-amuAP", ImagingSessionPath=""),
+                _make_row(SubjectID="sub-amuAP", ImagingSessionPath="", AccessLink=""),
             ],
         )
 
         with (
             patch("npdb.cli.cli.load_dotenv"),
             patch.dict("os.environ", ENV_VARS),
+            patch("npdb.cli.cli._repo_has_git_annex", return_value=False),
             patch("npdb.cli.cli.GiteaManagerFactory") as MockFactory,
         ):
             instance = MockFactory.create_from_env.return_value
@@ -921,7 +910,6 @@ class TestDownloadCLI:
                 [
                     "download",
                     str(tsv),
-                    "--git",
                     "--output-dir",
                     str(tmp_path),
                     "--no-verify-ssl",
@@ -935,9 +923,39 @@ class TestDownloadCLI:
         assert len(call_subjects) == 2
         assert all(path != "" for _, path, _ in call_subjects)
 
-    def test_git_mode_no_imaging_rows_warns(self, tmp_path):
+    def test_dataset_with_accesslink_skips_git(self, tmp_path):
+        tsv = _write_tsv(
+            tmp_path,
+            [
+                _make_row(
+                    DatasetName="dataset-http",
+                    RepositoryURL="https://data.neuro.polymtl.ca/datasets/dataset-http",
+                    AccessLink="https://example.com/http-only/file.bin",
+                    ImagingSessionPath="sub-amuAP",
+                )
+            ],
+        )
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.iter_bytes.return_value = iter([b"data"])
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch("npdb.cli.cli.httpx.stream", return_value=mock_response),
+            patch("npdb.cli.cli.GiteaManagerFactory") as MockFactory,
+        ):
+            result = runner.invoke(
+                npdb, ["download", str(tsv), "--output-dir", str(tmp_path)]
+            )
+
+        assert result.exit_code == 0, result.output
+        MockFactory.create_from_env.assert_not_called()
+
+    def test_no_targets_warns(self, tmp_path):
         # All rows have empty ImagingSessionPath
-        tsv = _write_tsv(tmp_path, [_make_row(ImagingSessionPath="")])
+        tsv = _write_tsv(tmp_path, [_make_row(ImagingSessionPath="", AccessLink="")])
         with (
             patch("npdb.cli.cli.load_dotenv"),
             patch.dict("os.environ", ENV_VARS),
@@ -945,15 +963,18 @@ class TestDownloadCLI:
         ):
             result = runner.invoke(
                 npdb,
-                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+                ["download", str(tsv), "--output-dir", str(tmp_path)],
             )
-        assert "No rows with both RepositoryURL and ImagingSessionPath" in result.output
+        assert "No download targets found" in result.output
 
-    def test_git_mode_failure_exits_nonzero(self, tmp_path):
-        tsv = _write_tsv(tmp_path, [_make_row(ImagingSessionPath="sub-amuAP")])
+    def test_git_protocol_failure_exits_nonzero(self, tmp_path):
+        tsv = _write_tsv(
+            tmp_path, [_make_row(ImagingSessionPath="sub-amuAP", AccessLink="")]
+        )
         with (
             patch("npdb.cli.cli.load_dotenv"),
             patch.dict("os.environ", ENV_VARS),
+            patch("npdb.cli.cli._repo_has_git_annex", return_value=False),
             patch("npdb.cli.cli.GiteaManagerFactory") as MockFactory,
         ):
             instance = MockFactory.create_from_env.return_value
@@ -962,18 +983,19 @@ class TestDownloadCLI:
             ]
             result = runner.invoke(
                 npdb,
-                ["download", str(tsv), "--git", "--output-dir", str(tmp_path)],
+                ["download", str(tsv), "--output-dir", str(tmp_path)],
             )
         assert result.exit_code != 0
-        assert "failed" in result.output.lower()
+        assert "failures" in result.output.lower()
 
-    # ── Mode 3: git + git-annex ──────────────────────────────────────────
-
-    def test_git_annex_mode_passes_use_annex_true(self, tmp_path):
-        tsv = _write_tsv(tmp_path, [_make_row(ImagingSessionPath="sub-amuAP")])
+    def test_annex_detected_passes_use_annex_true(self, tmp_path):
+        tsv = _write_tsv(
+            tmp_path, [_make_row(ImagingSessionPath="sub-amuAP", AccessLink="")]
+        )
         with (
             patch("npdb.cli.cli.load_dotenv"),
             patch.dict("os.environ", ENV_VARS),
+            patch("npdb.cli.cli._repo_has_git_annex", return_value=True),
             patch("npdb.cli.cli.GiteaManagerFactory") as MockFactory,
         ):
             instance = MockFactory.create_from_env.return_value
@@ -985,8 +1007,6 @@ class TestDownloadCLI:
                 [
                     "download",
                     str(tsv),
-                    "--git",
-                    "--git-annex",
                     "--output-dir",
                     str(tmp_path),
                     "--no-verify-ssl",
@@ -1002,28 +1022,3 @@ class TestDownloadCLI:
             else call_args.args[2] if len(call_args.args) > 2 else None
         )
         assert use_annex_val is True
-
-    def test_git_mode_label_shows_mode_in_output(self, tmp_path):
-        tsv = _write_tsv(tmp_path, [_make_row(ImagingSessionPath="sub-amuAP")])
-        with (
-            patch("npdb.cli.cli.load_dotenv"),
-            patch.dict("os.environ", ENV_VARS),
-            patch("npdb.cli.cli.GiteaManagerFactory") as MockFactory,
-        ):
-            instance = MockFactory.create_from_env.return_value
-            instance.download_subjects.return_value = [
-                (True, "whole-spine [sub-amuAP]", "OK")
-            ]
-            result = runner.invoke(
-                npdb,
-                [
-                    "download",
-                    str(tsv),
-                    "--git",
-                    "--git-annex",
-                    "--output-dir",
-                    str(tmp_path),
-                    "--no-verify-ssl",
-                ],
-            )
-        assert "git + git-annex" in result.output
