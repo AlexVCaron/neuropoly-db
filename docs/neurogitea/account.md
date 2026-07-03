@@ -15,7 +15,7 @@ Follow the instructions below to configure your account on the [neurogitea websi
 
 **On your computer (or the one you want to give access to NeuroGitea) :**
 
-0. First, verify if your machine is not already registered with NeuroGitea. Activate the VPN if not already done, then run the following command in your terminal:
+0. First, verify if your machine is already registered with NeuroGitea. Activate the VPN if not already done, then run the following command in your terminal:
 
    ```bash
    ssh git@data.neuro.polymtl.ca
@@ -30,13 +30,13 @@ Follow the instructions below to configure your account on the [neurogitea websi
    Shared connection to data.neuro.polymtl.ca closed.
    ```
 
-1. Verify if you already own a valid SSH key by running the following command in your terminal:
+1. If not successful, verify if you already own a valid SSH key by running the following command in your terminal:
 
    ```bash
    ls ~/.ssh/id_ed25519.pub
    ```
 
-   > **If you see a file path printed in the terminal, you already have a valid SSH key. You can skip to step 3.**
+   > **If you see a file path printed in the terminal, you already have a valid SSH key. You can go to step 3.**
 
 2. **You don't have an ssh key.** Generate a new one using `ssh-keygen` :
 
@@ -48,7 +48,7 @@ Follow the instructions below to configure your account on the [neurogitea websi
 
 **Back on the NeuroGitea website, in the settings page :**
 
-3. In the left sidebar, click on **SSH / GPG Keys**.
+3. In the left sidebar of NeuroGitea, click on **SSH / GPG Keys**.
 
    ![NeuroGitea SSH keys](../assets/neurogitea_token/neurogitea_ssh_keys.png)
 
