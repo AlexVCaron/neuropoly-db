@@ -111,7 +111,7 @@ class GitManager(Manager):
         Authentication is injected via http.extraHeader.
 
         Args:
-            repo_url: Repository URL without ``.git`` suffix.  May be a plain
+            repo_url: Repository URL, with or without ``.git`` suffix.  May be a plain
                       repo URL (e.g. ``…/org/repo``) **or** a git
                       tree URL that pins a specific commit/ref
                       (e.g. ``…/org/repo/tree/0491c0b3…``).  The
@@ -148,6 +148,7 @@ class GitManager(Manager):
             pinned_ref = None
             repo_path = full_path
 
+        repo_path = repo_path.removesuffix(".git")
         git_url = f"{base}{repo_path}.git"
         env = self.git_env()
         git = ["git"] + self.git_http_config()
