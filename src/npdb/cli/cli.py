@@ -250,7 +250,9 @@ def _fetch_url(url: str, dest: Path, timeout: int = 300) -> tuple[bool, str]:
 
 
 def _is_http_url(value: str) -> bool:
-    return value.startswith(("http://", "https://"))
+    is_http = value.startswith(("http://", "https://"))
+    is_git = value.endswith(".git") or "/tree/" in value
+    return is_http and not is_git
 
 
 def _normalize_repo_url_for_git(repo_url: str) -> str:
