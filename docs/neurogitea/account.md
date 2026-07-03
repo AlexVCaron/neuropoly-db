@@ -83,3 +83,9 @@ Follow the instructions below to configure your account on the [neurogitea websi
 4. Copy the generated token and save it somewhere safe. **It's the only time you'll be able to see it**.
 
    ![NeuroGitea generated token](../assets/neurogitea_token/neurogitea_generated_token.png)
+
+5. Edit the `neuropoly-db/.env` file and add your NeuroGitea username and the copied token here:
+   ```bash
+   NP_GITEA_APP_USER=
+   NP_GITEA_APP_TOKEN=
+   ```
