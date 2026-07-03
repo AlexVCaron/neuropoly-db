@@ -15,17 +15,17 @@ npdb standardize bids <bids_root_directory> \
    # (Optional) if not given, the script outputs in the input directory structure
    --output <output_directory> \
    # (Optional) standardization mode, default to 'manual'
-   --mode <manual|assist|auto|full-auto>
+  --mode <manual|auto|full-auto>
 ```
 
 > [!IMPORTANT]
-> The assisted and automated modes (`assist`, `auto` and `full-auto`) require additional dependencies to be installed. Run :
+> The automated modes (`auto` and `full-auto`) require additional dependencies to be installed. Run :
 >
 > ```bash
 > uv sync --active --quiet --extra annotation-automation
 > uv run playwright install --with-deps chromium
 > ```
-
+>
 > [!WARNING]
 > The automated modes (`auto` and `full-auto`) use **state-of-the-art language models** to replace human intervention in all parts of the standardization process. **There is no guarantee that the generated output will be correct. Always check the generated output for potential errors**.
 

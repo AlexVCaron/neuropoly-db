@@ -521,7 +521,7 @@ def standardize_bids(
     ),
     mode: str = typer.Option(
         AnnotationMode.MANUAL.value,
-        help="Annotation mode: manual|assist|auto|full-auto",
+        help="Annotation mode: manual|auto|full-auto",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
     dry_run: bool = typer.Option(
@@ -604,6 +604,14 @@ def standardize_bids(
         mode_enum = AnnotationMode(mode)
     except ValueError:
         typer.echo(f"Error: Invalid mode '{mode}'.", err=True)
+        raise typer.Exit(code=1)
+
+    if mode_enum == AnnotationMode.ASSIST:
+        typer.echo(
+            "Error: --mode assist is no longer supported for 'npdb standardize bids'. "
+            "Use one of: manual, auto, full-auto.",
+            err=True,
+        )
         raise typer.Exit(code=1)
 
     if mode_enum == AnnotationMode.MANUAL and (ai_provider or ai_model):
