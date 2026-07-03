@@ -89,3 +89,16 @@ Follow the instructions below to configure your account on the [neurogitea websi
    NP_GITEA_APP_USER=
    NP_GITEA_APP_TOKEN=
    ```
+
+6. Validate that your connection to NeuroGitea is functional:
+   ```bash
+   ssh git@data.neuro.polymtl.ca
+   ```
+
+   If successful, you should be seeing this:
+   ```text
+   PTY allocation request failed
+   Hi there, "$USER"! You've successfully authenticated with the key named "$EMAIL", but Gitea does not provide shell access.
+   If this is unexpected, please log in with password and setup Gitea under another user.
+   Shared connection to data.neuro.polymtl.ca closed.
+   ```
