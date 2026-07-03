@@ -81,9 +81,7 @@ All `npdb` commands are **interactive by default** and require user input to pro
 
 ![Standardize BIDS datasets](./docs/assets/npdb/cmd_standardize_bids.png)
 
-#### `npdb download [options] <dataset> <output>`
-
-##### [🢖 Download backends and authentication](./docs/npdb/download/extended.md)
+#### `npdb download [options] <query-results.tsv>`
 
 ##### [🢖 **Guide**: download from NeuroBagel queries](./docs/npdb/download/guides/neurobagel_query.md)
 
