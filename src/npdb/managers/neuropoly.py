@@ -79,13 +79,13 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
             commit = self.get_main_branch_head_commit(base_url)
             description["RepositoryURL"] = f"{base_url}/tree/{commit}"
         except RuntimeError:
-            description["RepositoryURL"] = base_url
+            description["RepositoryURL"] = f"{base_url}.git"
 
         # Add documentation link as AccessLink
         description["AccessInstructions"] = (
             "Refer to the access link provided with the repository."
         )
-        description["AccessLink"] = "https://intranet.neuro.polymtl.ca/data/README.html"
+        description["AccessLink"] = description["RepositoryURL"]
         description["AccessType"] = "restricted"
 
         return description
