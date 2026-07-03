@@ -41,14 +41,8 @@ The exported query results is saved in a **T**ab-**S**eparated-**V**alue (**TSV*
 > [!IMPORTANT]
 > Setup your [NeuroGitea](https://data.neuro.polymtl.ca) account for automated access, following [these instructions](../../../neurogitea/account.md#neurogitea-account-setup).
 
-> [!IMPORTANT]
-> Ensure that you have installed `npdb` ([see instructions](../../../../README.md#prerequisites)). To verify installation, run: `uv run npdb`
-
-> [!WARNING]
-> The download procedure uses `git-annex`. Your **git provider** must be setup for `ssh` authentication, and your **SSH keys** must be properly configured on your machine. **For the NeuroPoly NeuroGitea instance, refer to [this setup guide](https://intranet.neuro.polymtl.ca/data/git-datasets.html#initial-setup).**
-
-The exported query results contains an `AccessLink` column that will be filled with an URL to download the imaging data associated with each subject/session. **For datasets indexed on `git-annex` (as opposed to HTTP for datasets hosted on OpenNeuro, AWS, etc.), the `AccessLink` column is irrelevant.** Instead, use the `npdb download` command line tool with the `--git` option (additionally use the `--git-annex` option if necessary) :
+The exported query results associates an `AccessLink` and/or a `RepositoryURL` to each dataset. The `npdb download` command line tool will automatically determine the best method to use and download the datasets in your current directory (use `--output <path>` to specify a different output directory):
 
 ```bash
-uv run npdb download --git --git-annex <query-results.tsv>
+uv run npdb download <query-results.tsv>
 ```
