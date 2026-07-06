@@ -39,13 +39,20 @@ class DatasetConversionFacade:
         self._annotation_config = annotation_config
         self._run_ledger = run_ledger or RunLedger()
 
-    async def run(self, dataset: str, output: Path) -> None:
+    async def run(
+        self,
+        dataset: str,
+        output: Path,
+        extend_modalities: bool = False,
+    ) -> None:
         """
         Execute the full gitea → Neurobagel JSON-LD conversion for *dataset*.
 
         Args:
             dataset:  Repository name on DataNeuroPolyMTL (e.g. "my-dataset").
             output:   Directory where JSON-LD output and provenance are written.
+            extend_modalities: Enable custom modality suffix mapping during
+                BIDS preflight checks.
         """
         output.mkdir(parents=True, exist_ok=True)
 
@@ -96,6 +103,7 @@ class DatasetConversionFacade:
                 phenotypes_tsv=phenotypes_tsv,
                 phenotypes_annotations=phenotypes_annotations,
                 dataset_description=dataset_description,
+                extend_modalities=extend_modalities,
             )
 
             self._run_ledger.record_success()

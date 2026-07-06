@@ -127,6 +127,16 @@ def gitea2bagel(
         exists=True,
         rich_help_panel=OPTION_GROUP_NAMES["input"],
     ),
+    extend_modalities: bool = typer.Option(
+        True,
+        "--extend-modalities/--neurobagel-modalities",
+        help=(
+            "Use NeuroPoly custom modality mappings by default. Pass "
+            "--neurobagel-modalities to disable extensions and keep Neurobagel "
+            "native modality handling only."
+        ),
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
     help_: bool = help_option(),
 ):
     """
@@ -217,7 +227,13 @@ def gitea2bagel(
     ) as progress:
         progress.add_task(f"Converting {dataset}...", total=None)
         try:
-            asyncio.run(facade.run(dataset, output))
+            asyncio.run(
+                facade.run(
+                    dataset,
+                    output,
+                    extend_modalities=extend_modalities,
+                )
+            )
         except Exception as e:
             typer.echo(f"Error: {e}", err=True)
             raise typer.Exit(code=1)
