@@ -44,5 +44,8 @@ The exported query results is saved in a **T**ab-**S**eparated-**V**alue (**TSV*
 The exported query results associates an `AccessLink` and/or a `RepositoryURL` to each dataset. The `npdb download` command line tool will automatically determine the best method to use and download the datasets in your current directory (use `--output <path>` to specify a different output directory):
 
 ```bash
-uv run npdb download <query-results.tsv>
+uv run npdb download --no-verify-ssl <query-results.tsv>
 ```
+
+> [!WARNING]
+> The `--no-verify-ssl` option is required until a **chain of trust** is established for the NeuroGitea server. The potential vulnerabilities of this option are mitigated by obligatory VPN activation.
