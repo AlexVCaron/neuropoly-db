@@ -73,6 +73,10 @@ All `npdb` commands are **interactive by default** and require user input to pro
     uv run playwright install --with-deps chromium
     ```
 
+4. If you want GitHub login in front of the NeuroBagel query UI and query API,
+   set the gateway variables in your `.env` file before starting the stack.
+   The public entrypoint will be the auth gateway on `NB_GATEWAY_PORT_HOST`.
+
 ### Usage guides
 
 [This guide](./docs/npdb/download/guides/neurobagel_query.md) explains how to :

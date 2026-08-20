@@ -16,12 +16,12 @@
   },
 
   "forwardPorts": [
-    "proxy:80",
+    "gateway:4180",
     "graph:7200"
   ],
   "portsAttributes": {
-    "proxy:80": {
-      "label": "Neurobagel (UI + APIs)",
+    "gateway:4180": {
+      "label": "Neurobagel auth gateway",
       "onAutoForward": "openBrowserOnce",
       "protocol": "http"
     },

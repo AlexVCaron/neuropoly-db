@@ -12,6 +12,7 @@ services:
   federation:
     volumes: !override
       - ./local_nb_nodes.json:/usr/src/local_nb_nodes.json:ro
+    ports: !override []
 
   # Seed datasets from workspace directory at devcontainer build time
   init_data:
@@ -34,13 +35,31 @@ services:
       - "neurobagel_data:/data"
 
   # Dev reverse proxy — single port for both query UI and federation API.
-  # This lets VS Code SSH forward a single port to reach everything.
+  # This stays internal; the auth gateway is the public entrypoint.
   proxy:
     image: nginx:alpine
-    ports:
-      - "${NB_PROXY_PORT_HOST:-9000}:80"
     volumes:
       - ./config/nginx/dev-proxy.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - federation
       - query_federation
+
+  # OAuth2 gateway — public entrypoint for the query UI and query API.
+  # GitHub OAuth App credentials are provided via the root .env file.
+  gateway:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
+    ports:
+      - "${NB_GATEWAY_PORT_HOST:-9010}:4180"
+    environment:
+      OAUTH2_PROXY_PROVIDER: github
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_UPSTREAMS: http://proxy:80
+      OAUTH2_PROXY_REDIRECT_URL: http://localhost:${NB_GATEWAY_PORT_HOST:-9010}/oauth2/callback
+      OAUTH2_PROXY_CLIENT_ID: ${NB_GATEWAY_CLIENT_ID:-}
+      OAUTH2_PROXY_CLIENT_SECRET: ${NB_GATEWAY_CLIENT_SECRET:-}
+      OAUTH2_PROXY_COOKIE_SECRET: ${NB_GATEWAY_COOKIE_SECRET:-}
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${NB_GATEWAY_EMAIL_DOMAINS:-*}
+      OAUTH2_PROXY_GITHUB_USERS: ${NB_GATEWAY_GITHUB_USERS:-}
+      OAUTH2_PROXY_COOKIE_SECURE: "false"
+    depends_on:
+      - proxy
