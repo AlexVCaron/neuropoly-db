@@ -16,18 +16,15 @@
   },
 
   "forwardPorts": [
-    "gateway:4180",
-    "graph:7200"
+    "gateway:9010"
   ],
   "portsAttributes": {
-    "gateway:4180": {
+    "gateway:9010": {
       "label": "Neurobagel auth gateway",
       "onAutoForward": "openBrowserOnce",
       "protocol": "http"
     },
-    "graph:7200": {
-      "label": "GraphDB"
-    }
+    
   },
 
   "mounts": [
