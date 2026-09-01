@@ -16,15 +16,14 @@
   },
 
   "forwardPorts": [
-    "gateway:9010"
+    9010
   ],
   "portsAttributes": {
-    "gateway:9010": {
+    "9010": {
       "label": "Neurobagel auth gateway",
       "onAutoForward": "openBrowserOnce",
       "protocol": "http"
-    },
-    
+    }
   },
 
   "mounts": [
