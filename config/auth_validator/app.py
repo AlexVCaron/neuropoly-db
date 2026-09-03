@@ -2,8 +2,8 @@ import os
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, Header, Response, status
 from cachetools import TTLCache
+from fastapi import FastAPI, Header, Response, status
 
 GITHUB_API = "https://api.github.com"
 GITHUB_ORG = os.getenv("NB_GATEWAY_GITHUB_ORG", "")
@@ -56,6 +56,7 @@ async def validate(authorization: Optional[str] = Header(None)):
         return Response(status_code=status.HTTP_401_UNAUTHORIZED)
     headers = {"X-Auth-Request-User": username}
     return Response(status_code=status.HTTP_200_OK, headers=headers)
+
 
 # also accept any path to be flexible for proxying
 @app.get("/{path:path}")
