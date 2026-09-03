@@ -28,13 +28,13 @@ services:
   # duplicate container mount paths.
   api:
     volumes: !override
-      - "./scripts/neuropoly_api_entrypoint.sh:/usr/src/api_entrypoint.sh:ro"
-      - "./scripts/inject_vocab_patch.py:/usr/src/neurobagel/inject_vocab_patch.py:ro"
+      - "./scripts:/usr/src/neurobagel/scripts:ro"
+      - "./scripts/api_entrypoint.sh:/usr/src/api_entrypoint.sh:ro"
       - "./config/neuropoly_imaging_modalities.json:/usr/src/neurobagel/neuropoly_imaging_modalities.json:ro"
       - "./neurobagel-recipes/secrets/NB_GRAPH_PASSWORD.txt:/run/secrets/db_user_password:ro"
       - "neurobagel_data:/data"
     ports: !override []
-    secrets: !override []
+    entrypoint: ["/usr/src/api_entrypoint.sh"]
 
   # Prevent GraphDB from being published to the host; only gateway is public.
   graph:

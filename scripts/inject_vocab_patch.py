@@ -1,32 +1,20 @@
-"""
-Inject a sys.meta_path hook into the NeuroBagel API container so that
-the /imaging_modalities endpoint merges our custom nb: terms with the
-standard nidm: terms fetched from GitHub.
+"""Install a meta-path hook that patches `app.api.utility.request_data`.
 
-This script is run once at container startup by neuropoly_api_entrypoint.sh,
-before uvicorn launches.
-
-Why sys.meta_path instead of a direct import:
-  sitecustomize.py runs before uvicorn adds the app to sys.path, so
-  `import app.api.utility` at that point raises ModuleNotFoundError.
-  A meta_path finder defers the patch until the moment FastAPI actually
-  imports the module, by which time sys.path is fully configured.
+This script is safe to `import` (it installs the hook at import time)
+and can also be executed directly. It merges a local JSON vocabulary file
+with the upstream imaging_modalities response when present.
 """
 
-import site
-import sys
-from pathlib import Path
-
-PATCH = r'''
 import sys
 import json
+import sys
 from pathlib import Path
 
 _VOCAB_PATH = Path("/usr/src/neurobagel/neuropoly_imaging_modalities.json")
 
 
 class _NeuropolyVocabFinder:
-    """Intercepts the import of app.api.utility and patches request_data."""
+    """A simple meta-path finder/loader that patches `app.api.utility` on import."""
 
     def find_module(self, name, path=None):
         if name == "app.api.utility":
@@ -34,176 +22,67 @@ class _NeuropolyVocabFinder:
         return None
 
     def load_module(self, name):
+        # If already loaded, return it.
         if name in sys.modules:
             return sys.modules[name]
-        # Remove ourselves before importing to avoid infinite recursion.
-        sys.meta_path.remove(self)
+
+        # Remove ourselves to avoid recursion while importing the real module.
+        try:
+            sys.meta_path.remove(self)
+        except ValueError:
+            pass
+
         import importlib
+
         mod = importlib.import_module(name)
-        _orig = mod.request_data
 
-        def _patched(url, err):
-            if "imaging_modalities.json" in url and _VOCAB_PATH.exists():
-                try:
-                    base = _orig(url, err)
-                    custom = json.loads(_VOCAB_PATH.read_text())
-                    if isinstance(base, dict):
-                        base = [base]
-                    result = base + custom
-                    print(
-                        f"[neuropoly-vocab] patch applied: {len(result)} namespace blocks, "
-                        f"{sum(len(ns.get('terms', [])) for ns in result)} total terms",
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    return result
-                except Exception as exc:
-                    print(f"[neuropoly-vocab] patch error: {exc}", file=sys.stderr, flush=True)
-            return _orig(url, err)
+        # Patch the request_data function to merge local vocab when available.
+        try:
+            _orig = getattr(mod, "request_data")
 
-        mod.request_data = _patched
+            def _patched(url, err):
+                if "imaging_modalities.json" in url and _VOCAB_PATH.exists():
+                    try:
+                        base = _orig(url, err)
+                        custom = json.loads(_VOCAB_PATH.read_text())
+                        if isinstance(base, dict):
+                            base = [base]
+                        result = base + custom
+                        print(
+                            f"[neuropoly-vocab] patch applied: {len(result)} namespace blocks, "
+                            f"{sum(len(ns.get('terms', [])) for ns in result)} total terms",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                        return result
+                    except Exception as exc:  # pragma: no cover - defensive
+                        print(f"[neuropoly-vocab] patch error: {exc}", file=sys.stderr, flush=True)
+                return _orig(url, err)
+
+            setattr(mod, "request_data", _patched)
+        except Exception:  # pragma: no cover - if module shape unexpected, just skip patch
+            pass
+
         sys.modules[name] = mod
         return mod
 
 
-sys.meta_path.insert(0, _NeuropolyVocabFinder())
-'''
-
-# Find site-packages, with virtualenv fallback.
-try:
-    packages = site.getsitepackages()
-except AttributeError:
-    packages = [site.getusersitepackages()]
-    def find_module(self, name, path=None):
-        if name == "app.main":
-            return self
-        return None
-
-    def load_module(self, name):
-        if name in sys.modules:
-            return sys.modules[name]
-        # Remove ourselves to avoid recursion
-        sys.meta_path.remove(self)
-        import importlib
-        mod = importlib.import_module(name)
-        try:
-            from starlette.middleware.base import BaseHTTPMiddleware
-            from starlette.responses import Response
-            import httpx
-
-            app = getattr(mod, "app", None)
-            if app is not None:
-                class _GatewayAuthMiddleware(BaseHTTPMiddleware):
-                    async def dispatch(self, request, call_next):
-                        auth = request.headers.get("authorization")
-                        if auth and auth.lower().startswith("bearer"):
-                            try:
-                                async with httpx.AsyncClient(timeout=10.0) as client:
-                                    resp = await client.get(
-                                        "http://token_validator:4181/validate",
-                                        headers={"Authorization": auth},
-                                    )
-                                if resp.status_code == 200:
-                                    user = resp.headers.get("X-Auth-Request-User")
-                                    if user:
-                                        # inject header into ASGI scope so downstream sees it
-                                        hdrs = list(request.scope.get("headers", []))
-                                        hdrs.append((b"x-auth-user", user.encode("utf-8")))
-                                        request.scope["headers"] = hdrs
-                                        return await call_next(request)
-                                """
-                                Inject a sys.meta_path hook into the NeuroBagel API container so that
-                                the /imaging_modalities endpoint merges our custom nb: terms with the
-                                standard nidm: terms fetched from GitHub.
-
-                                This script is run once at container startup by neuropoly_api_entrypoint.sh,
-                                before uvicorn launches.
-
-                                Why sys.meta_path instead of a direct import:
-                                  sitecustomize.py runs before uvicorn adds the app to sys.path, so
-                                  `import app.api.utility` at that point raises ModuleNotFoundError.
-                                  A meta_path finder defers the patch until the moment FastAPI actually
-                                  imports the module, by which time sys.path is fully configured.
-                                """
-
-                                import site
-                                import sys
-                                from pathlib import Path
-
-                                PATCH = r'''
-                                import sys
-                                import json
-                                from pathlib import Path
-
-                                _VOCAB_PATH = Path("/usr/src/neurobagel/neuropoly_imaging_modalities.json")
+# Install the hook (idempotent)
+if not any(isinstance(p, _NeuropolyVocabFinder) for p in sys.meta_path):
+    sys.meta_path.insert(0, _NeuropolyVocabFinder())
 
 
-                                class _NeuropolyVocabFinder:
-                                    """Intercepts the import of app.api.utility and patches request_data."""
+def main():
+    """Entrypoint for direct execution: report status and exit.
 
-                                    def find_module(self, name, path=None):
-                                        if name == "app.api.utility":
-                                            return self
-                                        return None
-
-                                    def load_module(self, name):
-                                        if name in sys.modules:
-                                            return sys.modules[name]
-                                        # Remove ourselves before importing to avoid infinite recursion.
-                                        sys.meta_path.remove(self)
-                                        import importlib
-                                        mod = importlib.import_module(name)
-                                        _orig = mod.request_data
-
-                                        def _patched(url, err):
-                                            if "imaging_modalities.json" in url and _VOCAB_PATH.exists():
-                                                try:
-                                                    base = _orig(url, err)
-                                                    custom = json.loads(_VOCAB_PATH.read_text())
-                                                    if isinstance(base, dict):
-                                                        base = [base]
-                                                    result = base + custom
-                                                    print(
-                                                        f"[neuropoly-vocab] patch applied: {len(result)} namespace blocks, "
-                                                        f"{sum(len(ns.get('terms', [])) for ns in result)} total terms",
-                                                        file=sys.stderr,
-                                                        flush=True,
-                                                    )
-                                                    return result
-                                                except Exception as exc:
-                                                    print(f"[neuropoly-vocab] patch error: {exc}", file=sys.stderr, flush=True)
-                                            return _orig(url, err)
-
-                                        mod.request_data = _patched
-                                        sys.modules[name] = mod
-                                        return mod
+    The installation runs at import time; running the script prints the
+    status of the local vocab file and exits with code 0.
+    """
+    if _VOCAB_PATH.exists():
+        print(f"[neuropoly-vocab] local vocab present: {_VOCAB_PATH}")
+    else:
+        print(f"[neuropoly-vocab] local vocab not found: {_VOCAB_PATH}")
 
 
-                                sys.meta_path.insert(0, _NeuropolyVocabFinder())
-                                '''
-
-                                # Find site-packages, with virtualenv fallback.
-                                try:
-                                    packages = site.getsitepackages()
-                                except AttributeError:
-                                    packages = [site.getusersitepackages()]
-
-                                _OLD_SENTINEL = "import app.api.utility as _util"  # identifies the v1 broken patch
-                                # unique to the v2 meta_path hook
-                                _NEW_SENTINEL = "_NeuropolyVocabFinder"
-
-                                if not packages:
-                                    print("[neuropoly-vocab] Could not find site-packages; patch not installed", file=sys.stderr)
-                                else:
-                                    sc_path = Path(packages[0]) / "sitecustomize.py"
-                                    existing = sc_path.read_text() if sc_path.exists() else ""
-                                    if _NEW_SENTINEL in existing:
-                                        print(f"[neuropoly-vocab] patch already present in {sc_path}")
-                                    elif _OLD_SENTINEL in existing:
-                                        # Remove the old broken patch and write the new meta_path hook.
-                                        sc_path.write_text(PATCH.strip() + "\n")
-                                        print(
-                                            f"[neuropoly-vocab] old patch replaced with meta_path hook in {sc_path}")
-                                    else:
-                                        sc_path.write_text(existing + "\n" + PATCH)
-                                        print(f"[neuropoly-vocab] meta_path hook written to {sc_path}")
+if __name__ == "__main__":
+    main()
