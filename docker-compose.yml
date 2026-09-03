@@ -7,11 +7,9 @@ include:
   - ./neurobagel-recipes/docker-compose.yml
 
 services:
-  # Override federation volumes: root-level mount for local_nb_nodes.json
-  # (recipes compose tries to mount from recipes/ which doesn't have the file)
   federation:
-    volumes: !override []
-    ports: !override []
+    volumes: !override
+      - ./local_nb_nodes.json:/usr/src/local_nb_nodes.json:ro
 
   # Seed datasets from workspace directory at devcontainer build time
   init_data:
@@ -28,27 +26,13 @@ services:
   # duplicate container mount paths.
   api:
     volumes: !override
-      - "./scripts:/usr/src/neurobagel/scripts:ro"
-      - "./scripts/api_entrypoint.sh:/usr/src/api_entrypoint.sh:ro"
+      - "./scripts/neuropoly_api_entrypoint.sh:/usr/src/api_entrypoint.sh:ro"
+      - "./scripts/inject_vocab_patch.py:/usr/src/neurobagel/inject_vocab_patch.py:ro"
       - "./config/neuropoly_imaging_modalities.json:/usr/src/neurobagel/neuropoly_imaging_modalities.json:ro"
-      - "./neurobagel-recipes/secrets/NB_GRAPH_PASSWORD.txt:/run/secrets/db_user_password:ro"
-      - "neurobagel_data:/data"
-    ports: !override []
-    entrypoint: ["/usr/src/api_entrypoint.sh"]
-
-  # Prevent GraphDB from being published to the host; only gateway is public.
-  graph:
-    ports: !override []
-    secrets: !override []
-    volumes: !override
-      - "graphdb_home:/opt/graphdb/home"
-      - "./neurobagel-recipes/scripts:/usr/src/neurobagel/scripts"
-      - "./neurobagel-recipes/vocab:/usr/src/neurobagel/vocab"
-      - "./neurobagel-recipes/secrets/NB_GRAPH_ADMIN_PASSWORD.txt:/run/secrets/db_admin_password:ro"
-      - "./neurobagel-recipes/secrets/NB_GRAPH_PASSWORD.txt:/run/secrets/db_user_password:ro"
       - "neurobagel_data:/data"
 
-  # Internal reverse proxy — routes UI and federation traffic.
+  # Dev reverse proxy — single port for both query UI and federation API.
+  # This lets VS Code SSH forward a single port to reach everything.
   proxy:
     build:
       context: ./config/proxy
