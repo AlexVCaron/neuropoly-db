@@ -4,3 +4,6 @@
 [submodule "seed-datasets"]
 	path = seed-datasets
 	url = https://github.com/neuropoly/neurobagel-datasets.git
+[submodule "wiki"]
+	path = wiki
+	url = https://github.com/neuropoly/neuropoly-db.wiki.git
