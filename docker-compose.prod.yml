@@ -45,7 +45,7 @@ services:
     networks:
       default: null
     ports: []
-    profile:
+    profiles:
       - "node"
     secrets:
       - source: db_user_password
@@ -88,7 +88,7 @@ services:
     networks:
       default: null
     ports: []
-    profile:
+    profiles:
       - "portal"
     volumes:
       - bind:
@@ -113,7 +113,15 @@ services:
       default: null
       proxy-net: null
     ports:
-      - ${NB_GATEWAY_PORT_HOST:-9010}:80
+      - ${NB_GATEWAY_PORT_HOST:-9010}:443
+    volumes:
+      - type: bind
+        source: ./config/gateway/tls
+        target: /etc/nginx/tls
+        bind:
+          create_host_path: true
+    profiles:
+      - "portal"
   graph:
     depends_on:
       init_data:
@@ -130,7 +138,7 @@ services:
     networks:
       default: null
     ports: []
-    profile:
+    profiles:
       - "node"
     secrets:
       - source: db_admin_password
@@ -188,20 +196,22 @@ services:
       OAUTH2_PROXY_CLIENT_SECRET: ${NB_GATEWAY_CLIENT_SECRET:-}
       OAUTH2_PROXY_COOKIE_SAMESITE: lax
       OAUTH2_PROXY_COOKIE_SECRET: ${NB_GATEWAY_COOKIE_SECRET:-}
-      OAUTH2_PROXY_COOKIE_SECURE: "false"
       OAUTH2_PROXY_EMAIL_DOMAINS: ${NB_GATEWAY_EMAIL_DOMAINS:-*}
       OAUTH2_PROXY_GITHUB_ORG: ${NB_GATEWAY_GITHUB_ORG:-}
       OAUTH2_PROXY_GITHUB_TEAM: ${NB_GATEWAY_GITHUB_TEAM:-}
       OAUTH2_PROXY_GITHUB_USERS: ${NB_GATEWAY_GITHUB_USERS:-}
       OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
       OAUTH2_PROXY_PROVIDER: github
-      OAUTH2_PROXY_REDIRECT_URL: http://localhost:${NB_GATEWAY_PORT_HOST:-9010}/oauth2/callback
+      OAUTH2_PROXY_REDIRECT_URL: ${NB_GATEWAY_REDIRECT_URL:-https://localhost:${NB_GATEWAY_PORT_HOST:-9010}/oauth2/callback}
       OAUTH2_PROXY_REVERSE_PROXY: "true"
       OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
       OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: ${NB_GATEWAY_COOKIE_SECURE:-true}
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
     networks:
       proxy-net: null
+    profiles:
+      - "portal"
   proxy:
     build:
       context: ./config/proxy
@@ -216,6 +226,8 @@ services:
     image: neuropoly-db-dev-proxy:local
     networks:
       proxy-net: null
+    profiles:
+      - "portal"
   query_federation:
     environment:
       NB_API_QUERY_URL: https://${NB_FAPI_DOMAIN}${NB_FAPI_BASE_PATH}
@@ -231,7 +243,7 @@ services:
     networks:
       default: null
     ports: []
-    profile:
+    profiles:
       - "portal"
   token_validator:
     build:
@@ -247,6 +259,8 @@ services:
     image: neuropoly-db-token-validator:local
     networks:
       proxy-net: null
+    profiles:
+      - "portal"
 volumes:
   graphdb_home:
     name: neuropoly_nb_dev_graphdb_home

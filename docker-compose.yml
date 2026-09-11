@@ -47,7 +47,7 @@ services:
     environment:
       OAUTH2_PROXY_PROVIDER: github
       OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
-      OAUTH2_PROXY_REDIRECT_URL: http://localhost:${NB_GATEWAY_PORT_HOST:-9010}/oauth2/callback
+      OAUTH2_PROXY_REDIRECT_URL: ${NB_GATEWAY_REDIRECT_URL:-https://localhost:${NB_GATEWAY_PORT_HOST:-9010}/oauth2/callback}
       OAUTH2_PROXY_CLIENT_ID: ${NB_GATEWAY_CLIENT_ID:-}
       OAUTH2_PROXY_CLIENT_SECRET: ${NB_GATEWAY_CLIENT_SECRET:-}
       OAUTH2_PROXY_COOKIE_SECRET: ${NB_GATEWAY_COOKIE_SECRET:-}
@@ -58,7 +58,7 @@ services:
       OAUTH2_PROXY_REVERSE_PROXY: "true"
       OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
       OAUTH2_PROXY_COOKIE_SAMESITE: "lax"
-      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_COOKIE_SECURE: ${NB_GATEWAY_COOKIE_SECURE:-true}
       OAUTH2_PROXY_SKIP_JWT_BEARER_TOKENS: "true"
     depends_on:
       - proxy
@@ -81,7 +81,9 @@ services:
       context: ./config/gateway
     image: neuropoly-db-dev-gateway:local
     ports:
-      - "${NB_GATEWAY_PORT_HOST:-9010}:80"
+      - "${NB_GATEWAY_PORT_HOST:-9010}:443"
+    volumes:
+      - ./config/gateway/tls:/etc/nginx/tls
     depends_on:
       - oauth2-proxy
       - proxy
