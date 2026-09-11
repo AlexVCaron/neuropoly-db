@@ -230,7 +230,7 @@ services:
       - "portal"
   query_federation:
     environment:
-      NB_API_QUERY_URL: https://${NB_FAPI_DOMAIN}${NB_FAPI_BASE_PATH}
+      NB_API_QUERY_URL: ${NB_GATEWAY_PUBLIC_ORIGIN:-https://localhost:${NB_GATEWAY_PORT_HOST:-9010}}${NB_FAPI_BASE_PATH:-}
       NB_ENABLE_AUTH: ${NB_ENABLE_AUTH:-false}
       NB_QUERY_APP_BASE_PATH: ${NB_QUERY_APP_BASE_PATH:-/}
       NB_QUERY_CLIENT_ID: ${NB_QUERY_CLIENT_ID}
