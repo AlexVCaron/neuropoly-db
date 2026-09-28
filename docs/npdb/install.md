@@ -34,6 +34,11 @@ uv sync --active --quiet --extra annotation-automation
 uv run playwright install --with-deps chromium
 ```
 
+After installation:
+
+- use the [database ingestion workflows guide](./ingestion.md) to choose between `npdb convert bagel local` and `npdb convert bagel gitea`,
+- then continue with the shared [annotation and standardization modes](./gitea2bagel/extended.md) if you need assisted or automated conversion.
+
 ### Development environment
 
 To install the full development environment, run :
