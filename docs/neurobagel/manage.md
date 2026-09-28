@@ -25,7 +25,7 @@ echo "Waiting for graph and api services to restart..." && sleep 20
 
 `config/neuropoly_imaging_modalities.json` is the **single source of truth** for NeuroPoly's custom imaging modality terms. It drives two things simultaneously:
 
-1. **CLI ingestion** (`uv run npdb gitea2bagel --extend-modalities`): resolves BIDS suffixes to `nb:` IRIs before calling `bagel`.
+1. **CLI ingestion** (`uv run npdb convert bagel gitea --extend-modalities ...`): resolves BIDS suffixes to `nb:` IRIs before calling `bagel`.
 2. **Query UI labels**: the NeuroBagel API container reads this file at start-up and injects the human-readable term names into the `/imaging_modalities` vocabulary endpoint.
 
 ### Adding a new term

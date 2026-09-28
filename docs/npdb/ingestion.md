@@ -24,7 +24,7 @@
 Run the **dataset ingestion command** :
 
    ```bash
-   npdb gitea2bagel <dataset_id> <output_directory>
+   npdb convert bagel gitea <dataset_id> <output_directory>
    ```
 
    where :
@@ -37,7 +37,7 @@ Run the **dataset ingestion command** :
 NeuroBagel's `bagel` CLI natively supports 8 standard BIDS suffixes (`T1w`, `T2w`, `dwi`, `bold`, `asl`, `eeg`, `meg`, `pet`). NeuroPoly datasets frequently use non-standard suffixes such as `TEM`, `BF`, `PLI`, `UNIT1` or `T2star`. Pass `--extend-modalities` to let the ingestion pipeline handle these automatically instead of failing:
 
 ```bash
-npdb gitea2bagel <dataset_id> <output_directory> --extend-modalities
+npdb convert bagel gitea <dataset_id> <output_directory> --extend-modalities
 ```
 
 #### How suffix resolution works
@@ -57,7 +57,7 @@ When `--extend-modalities` is set, each unsupported suffix is resolved in the fo
 For datasets with suffixes not yet in the NeuroPoly vocab, pair `--extend-modalities` with AI options:
 
 ```bash
-npdb gitea2bagel <dataset_id> <output_directory> \
+npdb convert bagel gitea <dataset_id> <output_directory> \
     --extend-modalities \
     --ai-provider ollama \
     --ai-model neural-chat
@@ -103,3 +103,13 @@ When the pipeline cannot write a new term to the vocab file (e.g. due to a permi
 ```
 
 The dataset conversion **still succeeds** — the IRI is written into the JSON-LD graph. However, the query UI will show a blank label instead of a human-readable name until the term is added manually. Follow the instructions in [Managing the imaging modality vocabulary](../neurobagel/manage.md#custom-imaging-modality-vocabulary) to resolve these warnings.
+
+## Local datasets
+
+If the source dataset is already available locally (instead of on NeuroGitea), use:
+
+```bash
+npdb convert bagel local <input_dir> <online_url> <output_directory> [--access-type <value>]
+```
+
+This runs the same annotation and conversion pipeline, while using your local BIDS directory as input.

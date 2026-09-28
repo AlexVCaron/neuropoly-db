@@ -21,13 +21,13 @@ This repository hosts a collection of tools to interact with **metadata containe
 
 ## `npdb` command line tool
 
-The **N**euro**P**oly **D**atabase **B**rowser is a python command line tool **simplifies interaction** with the many databases **hosting technologies** ([NeuroGitea](https://data.neuro.polymtl.ca), [NeuroBagel](https://neurobagel.org), etc.) used at NeuroPoly and their associated **data standards** ([DICOM](https://www.dicomstandard.org), [Nifti](https://nifti.nimh.nih.gov), [BIDS](https://bids.neuroimaging.io/index.html), etc.). It offers, among others, the following functionalities :
+The **N**euro**P**oly **D**atabase **B**rowser is a python command line tool that **simplifies interaction** with the many databases and **hosting technologies** ([NeuroGitea](https://data.neuro.polymtl.ca), [NeuroBagel](https://neurobagel.org), etc.) used at NeuroPoly and their associated **data standards** ([DICOM](https://www.dicomstandard.org), [Nifti](https://nifti.nimh.nih.gov), [BIDS](https://bids.neuroimaging.io/index.html), etc.). It offers, among others, the following functionalities :
 
-- [Standardization of BIDS datasets](#npdb-standardize-bids-options-dataset) to a common NeuroPoly vocabulary and structure.
-- [Download of datasets from NeuroGitea](#npdb-download-options-dataset-output) using NeuroBagel queries.
-- [Conversion of NeuroGitea datasets to NeuroBagel](#npdb-gitea2bagel-options-dataset-output) format for ingestion in a NeuroBagel graph database.
+- [Standardization of BIDS datasets](#npdb-standardize-bids-options-bids_dir) to a common NeuroPoly vocabulary and structure.
+- [Download of datasets from NeuroGitea](#npdb-download-options-query-resultstsv) using NeuroBagel queries.
+- [Conversion of NeuroGitea or local BIDS datasets to NeuroBagel](#npdb-convert-bagel-gitea-options-dataset-output) format for ingestion in a NeuroBagel graph database.
 
-All `npdb` commands are **interactive by default** and require user input to proceed. However, most of them also offer **assited** and **automated** modes to reduce (even replace) user interaction and speed up the process. Refer to the [commands descriptions](#commands) below for more details.
+All `npdb` commands are **interactive by default** and require user input to proceed. However, most of them also offer **assisted** and **automated** modes to reduce (even replace) user interaction and speed up the process. Refer to the [commands descriptions](#commands) below for more details.
 
 > [!IMPORTANT]
 > **New users are strongly encouraged to read the [usage guides](#usage-guides) before using the CLI.**
@@ -77,29 +77,33 @@ All `npdb` commands are **interactive by default** and require user input to pro
 
 [This guide](./docs/npdb/download/guides/neurobagel_query.md) explains how to :
   
-  - **query datasets** using the `NeuroBagel` web interface,
-  - **save the query results** to file and interpret them,
-  - **download the query results** from `NeuroGitea` using `npdb`
+- **query datasets** using the `NeuroBagel` web interface,
+- **save the query results** to file and interpret them,
+- **download the query results** from `NeuroGitea` using `npdb`
 
 ### Commands
 
-#### `npdb standardize bids [options] <dataset>`
+#### `npdb standardize bids [options] <bids_dir>`
 
 ##### [🢖 Standardization options and customization](./docs/npdb/standardize/bids/extended.md)
 
-![Standardize BIDS datasets](./docs/assets/npdb/cmd_standardize_bids.png)
+![Standardize BIDS datasets](./docs/assets/npdb/npdb_standardize_bids.png)
 
 #### `npdb download [options] <query-results.tsv>`
 
 ##### [🢖 **Guide**: download from NeuroBagel queries](./docs/npdb/download/guides/neurobagel_query.md)
 
-![Download datasets from NeuroBagel](./docs/assets/npdb/cmd_download.png)
+![Download datasets from NeuroBagel](./docs/assets/npdb/npdb_download.png)
 
-#### `npdb gitea2bagel [options] <dataset> <output>`
+#### `npdb convert bagel gitea [options] <dataset> <output>`
+
+![NeuroGitea to NeuroBagel](./docs/assets/npdb/npdb_convert_bagel_gitea.png)
+
+#### `npdb convert bagel local [options] <input_dir> <online_url> <output>`
+
+![NeuroGitea to NeuroBagel](./docs/assets/npdb/npdb_convert_bagel_local.png)
 
 ##### [🢖 Annotation and standardization modes](./docs/npdb/gitea2bagel/extended.md)
-
-![NeuroGitea to NeuroBagel](./docs/assets/npdb/cmd_gitea2bagel.png)
 
 ### Developer guide
 

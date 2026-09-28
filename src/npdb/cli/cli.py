@@ -29,7 +29,7 @@ from npdb.cli.helpers import (
 from npdb.factories import GiteaManagerFactory
 
 npdb = typer.Typer(
-    help="Conversion tools and utilities for NeuroPoly Database (BIDS)",
+    help="NeuroPoly Database CLI for converting, standardizing, and downloading BIDS datasets.",
     context_settings={"help_option_names": ["--help", "-h"]},
     no_args_is_help=True,
     rich_markup_mode="rich",
@@ -43,7 +43,7 @@ def main():
 
 
 convert = typer.Typer(
-    help="Conversion tools from and to data organization standards in neuroimaging.",
+    help="Conversion commands for neuroimaging dataset metadata and formats.",
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
@@ -51,7 +51,7 @@ npdb.add_typer(convert, name="convert")
 
 
 bagel = typer.Typer(
-    help="Converts datasets to the bagel standard format (neuroimaging data and metadata).",
+    help="Convert BIDS datasets to Neurobagel JSON-LD (from local folders or NeuroGitea).",
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
@@ -62,7 +62,7 @@ convert.add_typer(bagel, name="bagel")
 def local2bagel(
     input_dir: Path = typer.Argument(
         ...,
-        help="Input directory containing the dataset to convert. Must be in BIDS format.",
+        help="Local BIDS dataset root directory to convert.",
         file_okay=False,
         dir_okay=True,
         writable=True,
@@ -70,19 +70,21 @@ def local2bagel(
     ),
     online_url: str = typer.Argument(
         ...,
-        help="Online URL of the dataset repository.",
-    ),
-    access_type: str = typer.Argument(
-        "restricted",
-        help="Access type for the dataset repository (e.g., 'restricted', 'public').",
+        help="Repository URL recorded in output metadata (RepositoryURL/AccessLink).",
     ),
     output: Path = typer.Argument(
         ...,
-        help="Output directory for converted dataset.",
+        help="Output directory for generated Neurobagel files.",
         file_okay=False,
         dir_okay=True,
         writable=True,
         resolve_path=True,
+    ),
+    access_type: str = typer.Option(
+        "restricted",
+        "--access-type",
+        help="Access type recorded in output metadata (e.g., 'restricted', 'public').",
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
     ),
     mode: str = typer.Option(
         AnnotationMode.MANUAL.value,
@@ -144,7 +146,7 @@ def local2bagel(
     help_: bool = help_option(),
 ):
     """
-    [bold]Convert a BIDS dataset from Gitea to Neurobagel JSON-LD format[/bold]
+    [bold]Convert a local BIDS dataset to Neurobagel JSON-LD format[/bold]
 
     This command automates annotation of phenotypic data using the selected mode:
     * [cyan]manual[/cyan]: Interactive annotation tool
@@ -244,7 +246,7 @@ def gitea2bagel(
     ),
     output: Path = typer.Argument(
         ...,
-        help="Output directory for converted dataset.",
+        help="Output directory for generated Neurobagel files.",
         file_okay=False,
         dir_okay=True,
         writable=True,
@@ -315,13 +317,16 @@ def gitea2bagel(
     help_: bool = help_option(),
 ):
     """
-    [bold]Convert a BIDS dataset from Gitea to Neurobagel JSON-LD format[/bold]
+    [bold]Convert a NeuroGitea dataset to Neurobagel JSON-LD format[/bold]
 
     This command automates annotation of phenotypic data using the selected mode:
     * [cyan]manual[/cyan]: Interactive annotation tool
     * [cyan]assist[/cyan]: Browser automation with user confirmation
     * [cyan]auto[/cyan]: Fully automated with ML-based suggestions
     * [cyan]full-auto[/cyan]: Experimental unattended mode (requires review!)
+
+    The dataset is cloned from NeuroGitea first, then converted via the local
+    conversion pipeline.
     """
     from dotenv import load_dotenv
 
@@ -343,19 +348,19 @@ def gitea2bagel(
         url, access_type = gitea_manager.get_description_extensions(dataset)
 
         local2bagel(
-            local_clone,
-            url,
-            access_type,
-            output,
-            mode,
-            phenotype_dict,
-            headless,
-            timeout,
-            artifacts_dir,
-            ai_provider,
-            ai_model,
-            header_map,
-            extend_modalities,
+            input_dir=local_clone,
+            online_url=url,
+            output=output,
+            access_type=access_type,
+            mode=mode,
+            phenotype_dict=phenotype_dict,
+            headless=headless,
+            timeout=timeout,
+            artifacts_dir=artifacts_dir,
+            ai_provider=ai_provider,
+            ai_model=ai_model,
+            header_map=header_map,
+            extend_modalities=extend_modalities,
         )
 
 
@@ -363,7 +368,7 @@ def gitea2bagel(
 def download(
     query_results: Path = typer.Argument(
         ...,
-        help="Path to query results TSV file with AccessLink column.",
+        help="Path to query-results TSV exported from Neurobagel Query.",
         exists=True,
         file_okay=True,
         dir_okay=False,
@@ -407,14 +412,16 @@ def download(
     """
     [bold]Download imaging data from query results TSV[/bold]
 
-    This command reads a TSV file containing query results and automatically
-    selects the download protocol per dataset:
+        This command reads a TSV file containing query results and automatically
+        selects the download protocol per dataset:
 
     * [cyan]HTTP:[/cyan] If [bold]AccessLink[/bold] is present for the dataset, download from
       link(s) directly.
     * [cyan]Git:[/cyan] Otherwise, clone from [bold]RepositoryURL[/bold] with sparse checkout.
     * [cyan]Git-annex:[/cyan] If the repository exposes a [bold]git-annex[/bold] branch,
       run annex content retrieval after git checkout.
+
+        Backend selection is automatic and can differ by dataset within the same TSV.
 
     Git operations require [bold]NP_GITEA_APP_URL[/bold], [bold]NP_GITEA_APP_USER[/bold],
     and [bold]NP_GITEA_APP_TOKEN[/bold] environment variables.
@@ -583,7 +590,7 @@ def standardize_bids(
     ),
     mode: str = typer.Option(
         AnnotationMode.MANUAL.value,
-        help="Annotation mode: manual|auto|full-auto",
+        help="Annotation mode: manual|auto|full-auto (assist is not supported here)",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
     dry_run: bool = typer.Option(

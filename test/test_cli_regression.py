@@ -162,8 +162,9 @@ class TestCLINoRegressions:
                 + [
                     str(input_dir),
                     "https://example.com/repo",
-                    "restricted",
                     str(output_dir),
+                    "--access-type",
+                    "restricted",
                 ],
             )
 

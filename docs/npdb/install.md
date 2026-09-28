@@ -27,7 +27,7 @@ This is about the `npdb` software installation to be able to download the data o
 
 ### Assisted annotation and standardization
 
-If you intend on using the assisted modes of the CLI, you need to install additional dependencies. Run the following commands to install them :
+If you intend on using assisted or automated modes of the CLI (`npdb standardize bids`, `npdb convert bagel gitea`, or `npdb convert bagel local`), you need to install additional dependencies. Run the following commands to install them:
 
 ```bash
 uv sync --active --quiet --extra annotation-automation
