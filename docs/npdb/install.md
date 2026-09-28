@@ -27,12 +27,17 @@ This is about the `npdb` software installation to be able to download the data o
 
 ### Assisted annotation and standardization
 
-If you intend on using the assisted modes of the CLI, you need to install additional dependencies. Run the following commands to install them :
+If you intend on using assisted or automated modes of the CLI (`npdb standardize bids`, `npdb convert bagel gitea`, or `npdb convert bagel local`), you need to install additional dependencies. Run the following commands to install them:
 
 ```bash
 uv sync --active --quiet --extra annotation-automation
 uv run playwright install --with-deps chromium
 ```
+
+After installation:
+
+- use the [database ingestion workflows guide](./ingestion.md) to choose between `npdb convert bagel local` and `npdb convert bagel gitea`,
+- then continue with the shared [annotation and standardization modes](./gitea2bagel/extended.md) if you need assisted or automated conversion.
 
 ### Development environment
 

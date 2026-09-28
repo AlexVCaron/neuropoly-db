@@ -1,11 +1,39 @@
-# `npdb gitea2bagel`
+# `npdb convert bagel`
 
-- [`npdb gitea2bagel`](#npdb-gitea2bagel)
-  - [Annotation and standardization `modes`](#annotation-and-standardization-modes)
+Use this page after choosing your ingestion entry point in the [database ingestion workflows guide](../ingestion.md). If the dataset is already on disk, start with `npdb convert bagel local`; if it must be fetched from NeuroGitea/Forgejo first, start with `npdb convert bagel gitea`.
+
+- [`npdb convert bagel`](#npdb-convert-bagel)
+   - [Command variants](#command-variants)
+      - [`npdb convert bagel gitea`](#npdb-convert-bagel-gitea)
+      - [`npdb convert bagel local`](#npdb-convert-bagel-local)
+   - [Annotation and standardization `modes`](#annotation-and-standardization-modes)
     - [`--mode manual` (default)](#--mode-manual-default)
     - [`--mode assist`](#--mode-assist)
     - [`--mode auto`](#--mode-auto)
     - [`--mode full-auto`](#--mode-full-auto)
+
+## Command variants
+
+### `npdb convert bagel gitea`
+
+Convert a dataset hosted on NeuroGitea/Forgejo to NeuroBagel JSON-LD:
+
+```bash
+npdb convert bagel gitea <dataset> <output>
+```
+
+### `npdb convert bagel local`
+
+Convert a local BIDS dataset to NeuroBagel JSON-LD:
+
+```bash
+npdb convert bagel local <input_dir> <online_url> <output> [--access-type <value>]
+```
+
+`online_url` is used to populate `RepositoryURL` / `AccessLink` metadata.
+`--access-type` defaults to `restricted` when omitted.
+
+Need help deciding between both commands? Return to [database ingestion workflows](../ingestion.md).
 
 ## Annotation and standardization `modes`
 
@@ -13,7 +41,7 @@
 
 To serve datasets to **NeuroBagel**, they first need to be annotated and standardized. via a [**manual procedure described on the NeuroBagel website**](https://neurobagel.org/user_guide/dataset_description/).
 
-When running `npdb gitea2bagel` in this mode, you will be prompted to provide the required files and informations at the right locations, in time.
+When running either `npdb convert bagel gitea` or `npdb convert bagel local` in this mode, you will be prompted to provide the required files and information at the right locations, in time.
 
 ### `--mode assist`
 

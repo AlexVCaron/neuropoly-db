@@ -8,13 +8,13 @@ managers, annotators, and converters directly.
 
 from __future__ import annotations
 
-import tempfile
+import json
 from pathlib import Path
 from typing import Optional
 
 from npdb.annotation import AnnotationConfig
 from npdb.managers.annotation import BIDSStandardizer, NeurobagelAnnotator
-from npdb.managers.neuropoly import BagelNeuroPolyMTL, DataNeuroPolyMTL
+from npdb.managers.neuropoly import BagelNeuroPolyMTL
 from npdb.report import LedgerObserver, RunLedger
 
 
@@ -31,17 +31,15 @@ class DatasetConversionFacade:
 
     def __init__(
         self,
-        gitea_manager: DataNeuroPolyMTL,
         annotation_config: AnnotationConfig,
         run_ledger: Optional[RunLedger] = None,
     ) -> None:
-        self._neurogitea = gitea_manager
         self._annotation_config = annotation_config
         self._run_ledger = run_ledger or RunLedger()
 
     async def run(
         self,
-        dataset: str,
+        dataset_dir: Path,
         output: Path,
         extend_modalities: bool = False,
     ) -> None:
@@ -49,65 +47,67 @@ class DatasetConversionFacade:
         Execute the full gitea → Neurobagel JSON-LD conversion for *dataset*.
 
         Args:
-            dataset:  Repository name on DataNeuroPolyMTL (e.g. "my-dataset").
+            dataset_dir:  Local path to the cloned dataset.
             output:   Directory where JSON-LD output and provenance are written.
             extend_modalities: Enable custom modality suffix mapping during
                 BIDS preflight checks.
         """
         output.mkdir(parents=True, exist_ok=True)
 
-        with tempfile.TemporaryDirectory(prefix="npdb_clone_") as tmp_dir:
-            local_clone = str(Path(tmp_dir) / dataset)
-
-            # 1. Clone the repository
-            self._neurogitea.clone_repository(dataset, local_clone, light=True)
-
-            # 2. Extend dataset description (stub on base class; may be
-            #    overridden by DataNeuroPolyMTL subclasses in future)
-            dataset_description = self._neurogitea.extend_description(
-                dataset, local_clone
+        # Locate dataset_description.json
+        dataset_description_path = dataset_dir / "dataset_description.json"
+        if not dataset_description_path.exists():
+            self._run_ledger.record_failure(
+                f"dataset_description.json not found in {dataset_dir}"
             )
-
-            # 3. Locate participants.tsv
-            participants_tsv_path = Path(local_clone) / "participants.tsv"
-            if not participants_tsv_path.exists():
-                self._run_ledger.record_failure(
-                    f"participants.tsv not found in {local_clone}"
-                )
-                self._run_ledger.flush()
-                raise FileNotFoundError(
-                    f"participants.tsv not found in cloned dataset: {local_clone}"
-                )
-
-            # 4. Annotate
-            annotator = NeurobagelAnnotator(self._annotation_config)
-            annotator.add_observer(LedgerObserver(self._run_ledger))
-
-            success = await annotator.execute(
-                participants_tsv_path=participants_tsv_path,
-                output_dir=output,
-            )
-
-            if not success:
-                self._run_ledger.record_failure("Annotation step returned False")
-                self._run_ledger.flush()
-                return
-
-            # 5. Convert BIDS
-            bagel_manager = BagelNeuroPolyMTL(str(output))
-            phenotypes_tsv = str(output / "phenotypes.tsv")
-            phenotypes_annotations = str(output / "phenotypes_annotations.json")
-            bagel_manager.convert_bids(
-                dataset=dataset,
-                bids_dir=local_clone,
-                phenotypes_tsv=phenotypes_tsv,
-                phenotypes_annotations=phenotypes_annotations,
-                dataset_description=dataset_description,
-                extend_modalities=extend_modalities,
-            )
-
-            self._run_ledger.record_success()
             self._run_ledger.flush()
+            raise FileNotFoundError(
+                f"dataset_description.json not found in cloned dataset: {dataset_dir}"
+            )
+
+        with open(dataset_description_path, "r", encoding="utf-8") as f:
+            dataset_description = json.load(f)
+
+        # Locate participants.tsv
+        participants_tsv_path = dataset_dir / "participants.tsv"
+        if not participants_tsv_path.exists():
+            self._run_ledger.record_failure(
+                f"participants.tsv not found in {dataset_dir}"
+            )
+            self._run_ledger.flush()
+            raise FileNotFoundError(
+                f"participants.tsv not found in cloned dataset: {dataset_dir}"
+            )
+
+        # Annotate
+        annotator = NeurobagelAnnotator(self._annotation_config)
+        annotator.add_observer(LedgerObserver(self._run_ledger))
+
+        success = await annotator.execute(
+            participants_tsv_path=participants_tsv_path,
+            output_dir=output,
+        )
+
+        if not success:
+            self._run_ledger.record_failure("Annotation step returned False")
+            self._run_ledger.flush()
+            return
+
+        # Convert BIDS
+        bagel_manager = BagelNeuroPolyMTL(str(output))
+        phenotypes_tsv = str(output / "phenotypes.tsv")
+        phenotypes_annotations = str(output / "phenotypes_annotations.json")
+        bagel_manager.convert_bids(
+            dataset=dataset_dir.name,
+            bids_dir=str(dataset_dir),
+            phenotypes_tsv=phenotypes_tsv,
+            phenotypes_annotations=phenotypes_annotations,
+            dataset_description=dataset_description,
+            extend_modalities=extend_modalities,
+        )
+
+        self._run_ledger.record_success()
+        self._run_ledger.flush()
 
 
 class BIDSStandardizationFacade:

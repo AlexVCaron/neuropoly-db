@@ -1,11 +1,9 @@
-import csv
 import os
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
 
-import httpx
 import typer
 from dotenv import load_dotenv
 from rich.live import Live
@@ -18,37 +16,20 @@ from rich.progress import (
 
 from npdb.annotation.modes import AnnotationMode
 from npdb.cli.display import RepoDownloadDisplay
+from npdb.cli.helpers import (
+    OPTION_GROUP_NAMES,
+    extend_bids_description,
+    fetch_url,
+    help_option,
+    is_http_url,
+    looks_like_non_git_repo_error,
+    read_tsv,
+    repo_has_git_annex,
+)
 from npdb.factories import GiteaManagerFactory
 
-OPTION_GROUP_NAMES = {
-    "input": "Input Options",
-    "output": "Output Options",
-    "behavior": "Behavior Options",
-    "automation": "Automation Options",
-    "ai": "AI Options",
-    "troubleshooting": "Troubleshooting",
-}
-
-
-def show_help(ctx: typer.Context, value: bool):
-    if value:
-        typer.echo(ctx.get_help())
-        raise typer.Exit()
-
-
-def help_option():
-    return typer.Option(
-        False,
-        "--help",
-        "-h",
-        callback=show_help,
-        help="Show this message and exit.",
-        rich_help_panel=OPTION_GROUP_NAMES["troubleshooting"],
-    )
-
-
 npdb = typer.Typer(
-    help="Conversion tools and utilities for NeuroPoly Database (BIDS)",
+    help="NeuroPoly Database CLI for converting, standardizing, and downloading BIDS datasets.",
     context_settings={"help_option_names": ["--help", "-h"]},
     no_args_is_help=True,
     rich_markup_mode="rich",
@@ -61,7 +42,203 @@ def main():
     return
 
 
-@npdb.command()
+convert = typer.Typer(
+    help="Conversion commands for neuroimaging dataset metadata and formats.",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
+npdb.add_typer(convert, name="convert")
+
+
+bagel = typer.Typer(
+    help="Convert BIDS datasets to Neurobagel JSON-LD (from local folders or NeuroGitea).",
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+)
+convert.add_typer(bagel, name="bagel")
+
+
+@bagel.command("local")
+def local2bagel(
+    input_dir: Path = typer.Argument(
+        ...,
+        help="Local BIDS dataset root directory to convert.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
+    online_url: str = typer.Argument(
+        ...,
+        help="Repository URL recorded in output metadata (RepositoryURL/AccessLink).",
+    ),
+    output: Path = typer.Argument(
+        ...,
+        help="Output directory for generated Neurobagel files.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
+    access_type: str = typer.Option(
+        "restricted",
+        "--access-type",
+        help="Access type recorded in output metadata (e.g., 'restricted', 'public').",
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    mode: str = typer.Option(
+        AnnotationMode.MANUAL.value,
+        help="Annotation mode: manual|assist|auto|full-auto",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
+    phenotype_dict: Optional[Path] = typer.Option(
+        None,
+        help="Path to phenotype dictionary JSON for prefill.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    headless: bool = typer.Option(
+        True,
+        "--headless/--headed",
+        help="Run browser in headless mode (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    timeout: int = typer.Option(
+        300,
+        help="Timeout per step in seconds (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    artifacts_dir: Optional[Path] = typer.Option(
+        None,
+        help="Directory for screenshots/traces (automation modes).",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    ai_provider: Optional[str] = typer.Option(
+        None,
+        help="AI provider (e.g., 'ollama').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    ai_model: Optional[str] = typer.Option(
+        None,
+        help="AI model name (e.g., 'neural-chat').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    header_map: Optional[Path] = typer.Option(
+        None,
+        "--header-map",
+        help="JSON file mapping desired Neurobagel headers to input variants.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    extend_modalities: bool = typer.Option(
+        True,
+        "--extend-modalities/--neurobagel-modalities",
+        help=(
+            "Use NeuroPoly custom modality mappings by default. Pass "
+            "--neurobagel-modalities to disable extensions and keep Neurobagel "
+            "native modality handling only."
+        ),
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
+    help_: bool = help_option(),
+):
+    """
+    [bold]Convert a local BIDS dataset to Neurobagel JSON-LD format[/bold]
+
+    This command automates annotation of phenotypic data using the selected mode:
+    * [cyan]manual[/cyan]: Interactive annotation tool
+    * [cyan]assist[/cyan]: Browser automation with user confirmation
+    * [cyan]auto[/cyan]: Fully automated with ML-based suggestions
+    * [cyan]full-auto[/cyan]: Experimental unattended mode (requires review!)
+    """
+    import asyncio
+
+    from npdb.annotation.standardize import load_header_map, validate_header_map_keys
+    from npdb.automation.mappings.solvers import load_static_mappings
+    from npdb.cli.facade import DatasetConversionFacade
+    from npdb.factories import AnnotationConfigFactory
+
+    try:
+        mode_enum = AnnotationMode(mode)
+    except ValueError:
+        typer.echo(f"Error: Invalid mode '{mode}'.", err=True)
+        raise typer.Exit(code=1)
+
+    if mode_enum == AnnotationMode.MANUAL and (ai_provider or ai_model):
+        typer.echo("Warning: AI options ignored in manual mode.", err=True)
+
+    if ai_provider and not ai_model:
+        typer.echo("Error: --ai-model required with --ai-provider.", err=True)
+        raise typer.Exit(code=1)
+
+    if ai_model and not ai_provider:
+        typer.echo("Error: --ai-provider required with --ai-model.", err=True)
+        raise typer.Exit(code=1)
+
+    if header_map:
+        try:
+            hmap = load_header_map(header_map)
+            static = load_static_mappings()
+            valid_keys = set(static.get("mappings", {}).keys())
+            validate_header_map_keys(hmap, valid_keys)
+        except (ValueError, FileNotFoundError) as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(code=1)
+
+    try:
+        output.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        typer.echo(f"Error creating output directory '{output}': {e}", err=True)
+        raise typer.Exit(code=1)
+
+    if artifacts_dir:
+        try:
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            typer.echo(
+                f"Error creating artifacts directory '{artifacts_dir}': {e}", err=True
+            )
+            raise typer.Exit(code=1)
+
+    annotation_config = AnnotationConfigFactory.create_from_cli_args(
+        mode=mode,
+        headless=headless,
+        timeout=timeout,
+        artifacts_dir=artifacts_dir,
+        ai_provider=ai_provider,
+        ai_model=ai_model,
+        phenotype_dictionary=phenotype_dict,
+        header_map=header_map,
+    )
+
+    facade = DatasetConversionFacade(annotation_config)
+    extend_bids_description(input_dir.name, str(input_dir), online_url, access_type)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+    ) as progress:
+        progress.add_task(f"Converting {input_dir.name}...", total=None)
+        try:
+            asyncio.run(
+                facade.run(
+                    input_dir,
+                    output,
+                    extend_modalities=extend_modalities,
+                )
+            )
+        except Exception as e:
+            typer.echo(f"Error: {e}", err=True)
+            raise typer.Exit(code=1)
+
+    typer.echo(f"Conversion complete! Output saved to: {output}")
+
+
+@bagel.command("gitea")
 def gitea2bagel(
     dataset: str = typer.Argument(
         ...,
@@ -69,7 +246,7 @@ def gitea2bagel(
     ),
     output: Path = typer.Argument(
         ...,
-        help="Output directory for converted dataset.",
+        help="Output directory for generated Neurobagel files.",
         file_okay=False,
         dir_okay=True,
         writable=True,
@@ -140,64 +317,20 @@ def gitea2bagel(
     help_: bool = help_option(),
 ):
     """
-    [bold]Convert a BIDS dataset from Gitea to Neurobagel JSON-LD format[/bold]
+    [bold]Convert a NeuroGitea dataset to Neurobagel JSON-LD format[/bold]
 
     This command automates annotation of phenotypic data using the selected mode:
     * [cyan]manual[/cyan]: Interactive annotation tool
     * [cyan]assist[/cyan]: Browser automation with user confirmation
     * [cyan]auto[/cyan]: Fully automated with ML-based suggestions
     * [cyan]full-auto[/cyan]: Experimental unattended mode (requires review!)
-    """
-    import asyncio
 
+    The dataset is cloned from NeuroGitea first, then converted via the local
+    conversion pipeline.
+    """
     from dotenv import load_dotenv
 
-    from npdb.annotation.standardize import load_header_map, validate_header_map_keys
-    from npdb.automation.mappings.solvers import load_static_mappings
-    from npdb.cli.facade import DatasetConversionFacade
-    from npdb.factories import AnnotationConfigFactory, GiteaManagerFactory
-
-    try:
-        mode_enum = AnnotationMode(mode)
-    except ValueError:
-        typer.echo(f"Error: Invalid mode '{mode}'.", err=True)
-        raise typer.Exit(code=1)
-
-    if mode_enum == AnnotationMode.MANUAL and (ai_provider or ai_model):
-        typer.echo("Warning: AI options ignored in manual mode.", err=True)
-
-    if ai_provider and not ai_model:
-        typer.echo("Error: --ai-model required with --ai-provider.", err=True)
-        raise typer.Exit(code=1)
-
-    if ai_model and not ai_provider:
-        typer.echo("Error: --ai-provider required with --ai-model.", err=True)
-        raise typer.Exit(code=1)
-
-    if header_map:
-        try:
-            hmap = load_header_map(header_map)
-            static = load_static_mappings()
-            valid_keys = set(static.get("mappings", {}).keys())
-            validate_header_map_keys(hmap, valid_keys)
-        except (ValueError, FileNotFoundError) as e:
-            typer.echo(f"Error: {e}", err=True)
-            raise typer.Exit(code=1)
-
-    try:
-        output.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        typer.echo(f"Error creating output directory '{output}': {e}", err=True)
-        raise typer.Exit(code=1)
-
-    if artifacts_dir:
-        try:
-            artifacts_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            typer.echo(
-                f"Error creating artifacts directory '{artifacts_dir}': {e}", err=True
-            )
-            raise typer.Exit(code=1)
+    from npdb.factories import GiteaManagerFactory
 
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
 
@@ -207,117 +340,35 @@ def gitea2bagel(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(code=1)
 
-    annotation_config = AnnotationConfigFactory.create_from_cli_args(
-        mode=mode,
-        headless=headless,
-        timeout=timeout,
-        artifacts_dir=artifacts_dir,
-        ai_provider=ai_provider,
-        ai_model=ai_model,
-        phenotype_dictionary=phenotype_dict,
-        header_map=header_map,
-    )
+    with tempfile.TemporaryDirectory(prefix="npdb_clone_") as tmp_dir:
+        local_clone = Path(tmp_dir) / dataset
 
-    facade = DatasetConversionFacade(gitea_manager, annotation_config)
+        # 1. Clone the repository
+        gitea_manager.clone_repository(dataset, str(local_clone), light=True)
+        url, access_type = gitea_manager.get_description_extensions(dataset)
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        transient=True,
-    ) as progress:
-        progress.add_task(f"Converting {dataset}...", total=None)
-        try:
-            asyncio.run(
-                facade.run(
-                    dataset,
-                    output,
-                    extend_modalities=extend_modalities,
-                )
-            )
-        except Exception as e:
-            typer.echo(f"Error: {e}", err=True)
-            raise typer.Exit(code=1)
-
-    typer.echo(f"Conversion complete! Output saved to: {output}")
-
-
-def _read_download_tsv(tsv_path: Path) -> list[dict]:
-    with open(tsv_path, newline="", encoding="utf-8") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        if reader.fieldnames is None:
-            raise ValueError("TSV file is empty or has no header row")
-        rows = list(reader)
-    if not rows:
-        raise ValueError("TSV file contains no data rows")
-    return rows
-
-
-def _fetch_url(url: str, dest: Path, timeout: int = 300) -> tuple[bool, str]:
-    try:
-        with httpx.stream("GET", url, follow_redirects=True, timeout=timeout) as r:
-            r.raise_for_status()
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            with open(dest, "wb") as fh:
-                for chunk in r.iter_bytes():
-                    fh.write(chunk)
-        return True, f"Downloaded: {dest.name}"
-    except Exception as exc:
-        return False, str(exc)
-
-
-def _is_http_url(value: str) -> bool:
-    is_http = value.startswith(("http://", "https://"))
-    is_git = value.endswith(".git") or "/tree/" in value
-    return is_http and not is_git
-
-
-def _normalize_repo_url_for_git(repo_url: str) -> str:
-    parsed = urlparse(repo_url if "://" in repo_url else f"https://{repo_url}")
-    repo_path = parsed.path.rstrip("/")
-    tree_idx = repo_path.find("/tree/")
-    if tree_idx != -1:
-        repo_path = repo_path[:tree_idx]
-    if not repo_path.endswith(".git"):
-        repo_path += ".git"
-    return f"{parsed.scheme}://{parsed.netloc}{repo_path}"
-
-
-def _repo_has_git_annex(gitea_manager, repo_url: str) -> bool:
-    git_url = _normalize_repo_url_for_git(repo_url)
-    cmd = (
-        ["git"]
-        + gitea_manager.git_http_config()
-        + ["ls-remote", "--heads", git_url, "refs/heads/git-annex"]
-    )
-
-    try:
-        stdout, _ = gitea_manager._run_git(
-            cmd,
-            env=gitea_manager.git_env(),
-            context=f"probe git-annex metadata branch for '{repo_url}'",
+        local2bagel(
+            input_dir=local_clone,
+            online_url=url,
+            output=output,
+            access_type=access_type,
+            mode=mode,
+            phenotype_dict=phenotype_dict,
+            headless=headless,
+            timeout=timeout,
+            artifacts_dir=artifacts_dir,
+            ai_provider=ai_provider,
+            ai_model=ai_model,
+            header_map=header_map,
+            extend_modalities=extend_modalities,
         )
-    except RuntimeError:
-        return False
-
-    return bool(stdout.strip())
-
-
-def _looks_like_non_git_repo_error(message: str) -> bool:
-    lowered = message.lower()
-    patterns = [
-        "not a git repository",
-        "does not appear to be a git repository",
-        "fatal: repository",
-        "repository not found",
-    ]
-    return any(p in lowered for p in patterns)
 
 
 @npdb.command("download")
 def download(
     query_results: Path = typer.Argument(
         ...,
-        help="Path to query results TSV file with AccessLink column.",
+        help="Path to query-results TSV exported from Neurobagel Query.",
         exists=True,
         file_okay=True,
         dir_okay=False,
@@ -361,8 +412,8 @@ def download(
     """
     [bold]Download imaging data from query results TSV[/bold]
 
-    This command reads a TSV file containing query results and automatically
-    selects the download protocol per dataset:
+        This command reads a TSV file containing query results and automatically
+        selects the download protocol per dataset:
 
     * [cyan]HTTP:[/cyan] If [bold]AccessLink[/bold] is present for the dataset, download from
       link(s) directly.
@@ -370,11 +421,13 @@ def download(
     * [cyan]Git-annex:[/cyan] If the repository exposes a [bold]git-annex[/bold] branch,
       run annex content retrieval after git checkout.
 
+        Backend selection is automatic and can differ by dataset within the same TSV.
+
     Git operations require [bold]NP_GITEA_APP_URL[/bold], [bold]NP_GITEA_APP_USER[/bold],
     and [bold]NP_GITEA_APP_TOKEN[/bold] environment variables.
     """
     try:
-        rows = _read_download_tsv(query_results)
+        rows = read_tsv(query_results)
     except (OSError, ValueError) as exc:
         typer.echo(f"Error reading TSV: {exc}", err=True)
         raise typer.Exit(code=1)
@@ -389,7 +442,7 @@ def download(
         dataset = (row.get("DatasetName") or "unknown").strip()
         subject = (row.get("SubjectID") or "unknown").strip()
         url = (row.get("AccessLink") or "").strip()
-        if not _is_http_url(url):
+        if not is_http_url(url):
             continue
         datasets_with_http.add(dataset)
         if url in seen_urls:
@@ -406,7 +459,7 @@ def download(
         )
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
-                pool.submit(_fetch_url, url, dest): (dataset, subject)
+                pool.submit(fetch_url, url, dest): (dataset, subject)
                 for url, dest, dataset, subject in http_jobs
             }
             with Progress(
@@ -476,7 +529,7 @@ def download(
 
         with Live(display, refresh_per_second=4, transient=False):
             for (repo_url, dataset), sparse_paths in grouped.items():
-                use_annex = _repo_has_git_annex(gitea_manager, repo_url)
+                use_annex = repo_has_git_annex(gitea_manager, repo_url)
                 if verbose:
                     protocol = "git + git-annex" if use_annex else "git"
                     typer.echo(f"Protocol for {dataset}: {protocol}")
@@ -492,7 +545,7 @@ def download(
                     if ok:
                         continue
                     git_failures += 1
-                    if _looks_like_non_git_repo_error(message):
+                    if looks_like_non_git_repo_error(message):
                         typer.echo(
                             f"FAIL {label}: RepositoryURL is not a git repository.",
                             err=True,
@@ -537,7 +590,7 @@ def standardize_bids(
     ),
     mode: str = typer.Option(
         AnnotationMode.MANUAL.value,
-        help="Annotation mode: manual|auto|full-auto",
+        help="Annotation mode: manual|auto|full-auto (assist is not supported here)",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
     dry_run: bool = typer.Option(

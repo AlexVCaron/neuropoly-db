@@ -2,7 +2,7 @@
 
 ## BIDS `participants.tsv` standardization
 
-The `npdb standarize bids` will :
+The `npdb standardize bids` command will:
 
 - Standardize the header fields of provided `participants.tsv` file(s), following a given standard (the NeuroBagel standard by default).
 - Add missing fields with empty values, following the same standard.
@@ -12,11 +12,13 @@ The `npdb standarize bids` will :
 
 ```bash
 npdb standardize bids <bids_root_directory> \
-   # (Optional) if not given, the script outputs in the input directory structure
-   --output <output_directory> \
-   # (Optional) standardization mode, default to 'manual'
-  --mode <manual|auto|full-auto>
+  # (Optional) standardization mode, default is manual
+  --mode <manual|auto|full-auto> \
+  # (Optional) preview changes without writing files
+  --dry-run
 ```
+
+Standardization edits the dataset in place. Use `--dry-run` to preview changes.
 
 > [!IMPORTANT]
 > The automated modes (`auto` and `full-auto`) require additional dependencies to be installed. Run :

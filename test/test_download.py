@@ -13,7 +13,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from npdb.cli.cli import _fetch_url, _read_download_tsv, npdb
+from npdb.cli.cli import npdb
+from npdb.cli.helpers import fetch_url, read_tsv
 from npdb.managers.neuropoly import DataNeuroPolyMTL
 
 runner = CliRunner()
@@ -724,13 +725,13 @@ class TestDownloadSubjects:
 class TestReadDownloadTsv:
     def test_parses_header_and_rows(self, tmp_path):
         tsv = _write_tsv(tmp_path, [_make_row(SubjectID="sub-01")])
-        rows = _read_download_tsv(tsv)
+        rows = read_tsv(tsv)
         assert len(rows) == 1
         assert rows[0]["SubjectID"] == "sub-01"
 
     def test_all_expected_columns_present(self, tmp_path):
         tsv = _write_tsv(tmp_path, [_make_row()])
-        rows = _read_download_tsv(tsv)
+        rows = read_tsv(tsv)
         for col in [
             "DatasetName",
             "RepositoryURL",
@@ -744,18 +745,18 @@ class TestReadDownloadTsv:
         tsv = tmp_path / "empty.tsv"
         tsv.write_text("", encoding="utf-8")
         with pytest.raises(ValueError, match="empty or has no header"):
-            _read_download_tsv(tsv)
+            read_tsv(tsv)
 
     def test_raises_on_header_only(self, tmp_path):
         tsv = tmp_path / "header.tsv"
         tsv.write_text(TSV_HEADER + "\n", encoding="utf-8")
         with pytest.raises(ValueError, match="no data rows"):
-            _read_download_tsv(tsv)
+            read_tsv(tsv)
 
     def test_multiple_rows(self, tmp_path):
         rows_data = [_make_row(SubjectID=f"sub-0{i}") for i in range(5)]
         tsv = _write_tsv(tmp_path, rows_data)
-        rows = _read_download_tsv(tsv)
+        rows = read_tsv(tsv)
         assert len(rows) == 5
 
 
@@ -775,8 +776,8 @@ class TestFetchUrl:
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
 
-        with patch("npdb.cli.cli.httpx.stream", return_value=mock_response):
-            ok, msg = _fetch_url("https://example.com/file.nii.gz", dest)
+        with patch("npdb.cli.helpers.httpx.stream", return_value=mock_response):
+            ok, msg = fetch_url("https://example.com/file.nii.gz", dest)
 
         assert ok
         assert dest.exists()
@@ -791,17 +792,17 @@ class TestFetchUrl:
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
 
-        with patch("npdb.cli.cli.httpx.stream", return_value=mock_response):
-            _fetch_url("https://example.com/file.bin", dest)
+        with patch("npdb.cli.helpers.httpx.stream", return_value=mock_response):
+            fetch_url("https://example.com/file.bin", dest)
 
         assert dest.parent.is_dir()
 
     def test_returns_false_on_http_error(self, tmp_path):
         dest = tmp_path / "file.bin"
         with patch(
-            "npdb.cli.cli.httpx.stream", side_effect=Exception("connection refused")
+            "npdb.cli.helpers.httpx.stream", side_effect=Exception("connection refused")
         ):
-            ok, msg = _fetch_url("https://example.com/file.bin", dest)
+            ok, msg = fetch_url("https://example.com/file.bin", dest)
 
         assert not ok
         assert "connection refused" in msg
@@ -854,7 +855,7 @@ class TestDownloadCLI:
         mock_response.__enter__ = MagicMock(return_value=mock_response)
         mock_response.__exit__ = MagicMock(return_value=False)
 
-        with patch("npdb.cli.cli.httpx.stream", return_value=mock_response):
+        with patch("npdb.cli.helpers.httpx.stream", return_value=mock_response):
             result = runner.invoke(
                 npdb, ["download", str(tsv), "--output-dir", str(tmp_path)]
             )
@@ -872,7 +873,7 @@ class TestDownloadCLI:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with patch(
-            "npdb.cli.cli.httpx.stream", return_value=mock_response
+            "npdb.cli.helpers.httpx.stream", return_value=mock_response
         ) as mock_stream:
             runner.invoke(npdb, ["download", str(tsv), "--output-dir", str(tmp_path)])
 
@@ -898,7 +899,7 @@ class TestDownloadCLI:
         with (
             patch("npdb.cli.cli.load_dotenv"),
             patch.dict("os.environ", ENV_VARS),
-            patch("npdb.cli.cli._repo_has_git_annex", return_value=False),
+            patch("npdb.cli.cli.repo_has_git_annex", return_value=False),
             patch("npdb.cli.cli.GiteaManagerFactory") as MockFactory,
         ):
             instance = MockFactory.create_from_env.return_value
@@ -943,7 +944,7 @@ class TestDownloadCLI:
         mock_response.__exit__ = MagicMock(return_value=False)
 
         with (
-            patch("npdb.cli.cli.httpx.stream", return_value=mock_response),
+            patch("npdb.cli.helpers.httpx.stream", return_value=mock_response),
             patch("npdb.cli.cli.GiteaManagerFactory") as MockFactory,
         ):
             result = runner.invoke(
@@ -974,7 +975,7 @@ class TestDownloadCLI:
         with (
             patch("npdb.cli.cli.load_dotenv"),
             patch.dict("os.environ", ENV_VARS),
-            patch("npdb.cli.cli._repo_has_git_annex", return_value=False),
+            patch("npdb.cli.cli.repo_has_git_annex", return_value=False),
             patch("npdb.cli.cli.GiteaManagerFactory") as MockFactory,
         ):
             instance = MockFactory.create_from_env.return_value
@@ -995,7 +996,7 @@ class TestDownloadCLI:
         with (
             patch("npdb.cli.cli.load_dotenv"),
             patch.dict("os.environ", ENV_VARS),
-            patch("npdb.cli.cli._repo_has_git_annex", return_value=True),
+            patch("npdb.cli.cli.repo_has_git_annex", return_value=True),
             patch("npdb.cli.cli.GiteaManagerFactory") as MockFactory,
         ):
             instance = MockFactory.create_from_env.return_value
