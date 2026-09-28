@@ -1,5 +1,7 @@
 # `npdb convert bagel`
 
+Use this page after choosing your ingestion entry point in the [database ingestion workflows guide](../ingestion.md). If the dataset is already on disk, start with `npdb convert bagel local`; if it must be fetched from NeuroGitea/Forgejo first, start with `npdb convert bagel gitea`.
+
 - [`npdb convert bagel`](#npdb-convert-bagel)
    - [Command variants](#command-variants)
       - [`npdb convert bagel gitea`](#npdb-convert-bagel-gitea)
@@ -14,7 +16,7 @@
 
 ### `npdb convert bagel gitea`
 
-Convert a dataset hosted on NeuroGitea to NeuroBagel JSON-LD:
+Convert a dataset hosted on NeuroGitea/Forgejo to NeuroBagel JSON-LD:
 
 ```bash
 npdb convert bagel gitea <dataset> <output>
@@ -30,6 +32,8 @@ npdb convert bagel local <input_dir> <online_url> <output> [--access-type <value
 
 `online_url` is used to populate `RepositoryURL` / `AccessLink` metadata.
 `--access-type` defaults to `restricted` when omitted.
+
+Need help deciding between both commands? Return to [database ingestion workflows](../ingestion.md).
 
 ## Annotation and standardization `modes`
 
