@@ -59,36 +59,23 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
         if cache_dir and target != local_path and not Path(local_path).exists():
             shutil.copytree(target, local_path, symlinks=True)
 
-    def extend_description(self, dataset: str, local_clone: str):
+    def get_description_extensions(self, dataset: str):
         """
         Extend the dataset_description.json file using NeuroBagel standard.
         See : https://neurobagel.org/user_guide/dataset_description/#editable-template
         """
-        desc_path = Path(local_clone) / "dataset_description.json"
-        with open(desc_path, "r") as f:
-            description = json.load(f)
 
-        description["Name"] = dataset
-
-        if not description.get("Keywords"):
-            description["Keywords"] = [dataset]
-
-        # Add repository URL, including the HEAD commit for reproducibility
-        base_url = f"{self.client.url}/{self.organization.name}/{dataset}"  # type: ignore
+        url = f"{self.client.url}/{self.organization.name}/{dataset}"  # type: ignore
         try:
-            commit = self.get_main_branch_head_commit(base_url)
-            description["RepositoryURL"] = f"{base_url}/tree/{commit}"
+            commit = self.get_main_branch_head_commit(url)
+            url = f"{url}/tree/{commit}"
         except RuntimeError:
-            description["RepositoryURL"] = f"{base_url}.git"
+            url = f"{url}.git"
 
-        # Add documentation link as AccessLink
-        description["AccessInstructions"] = (
-            "Refer to the access link provided with the repository."
-        )
-        description["AccessLink"] = description["RepositoryURL"]
-        description["AccessType"] = "restricted"
+        # Not checking for now
+        access_type = "restricted"
 
-        return description
+        return url, access_type
 
     def download_subjects(
         self,
