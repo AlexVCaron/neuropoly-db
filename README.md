@@ -7,6 +7,14 @@ This repository hosts a collection of tools to interact with **metadata containe
 - Automatic conversion of BIDS datasets to [NeuroBagel](https://neurobagel.org)
 - Automated download from [NeuroBagel](https://neurobagel.org) queries
   - Support `http(s)`, `git` and `git-annex` protocols
+    - Works with [Gitea](https://gitea.com) and [Forgejo](https://forgejo.org) out-of-the-box
+  - Soon to be released specialized support for :
+    - [Kaggle](https://www.kaggle.com)
+    - [Mendeley Data](https://data.mendeley.com)
+    - [MIDRC](https://midrc.org)
+    - [OpenNeuro](https://openneuro.org)
+    - [Zenodo](https://zenodo.org)
+    - [Figshare](https://figshare.com) (partially supported via `http(s)` protocol)
 
 ## Contents
 
@@ -25,7 +33,7 @@ The **N**euro**P**oly **D**atabase **B**rowser is a python command line tool tha
 
 - [Standardization of BIDS datasets](#npdb-standardize-bids-options-bids_dir) to a common NeuroPoly vocabulary and structure.
 - [Download of datasets from NeuroGitea](#npdb-download-options-query-resultstsv) using NeuroBagel queries.
-- [Conversion of local BIDS datasets — or datasets fetched from NeuroGitea/Forgejo — to NeuroBagel](#npdb-convert-bagel-local-options-input_dir-online_url-output) format for ingestion in a NeuroBagel graph database.
+- [Conversion of BIDS datasets to NeuroBagel](#npdb-convert-bagel-local-options-input_dir-online_url-output) format for ingestion in a NeuroBagel graph database.
 
 All `npdb` commands are **interactive by default** and require user input to proceed. However, most of them also offer **assisted** and **automated** modes to reduce (even replace) user interaction and speed up the process. Refer to the [commands descriptions](#commands) below for more details.
 
