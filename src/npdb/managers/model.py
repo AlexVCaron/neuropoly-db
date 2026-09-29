@@ -59,6 +59,44 @@ class Manager(ABC):
     def datasets(self) -> Sequence[Any]:
         pass
 
+
+class ProviderManagerBase(Manager):
+    provider_name = "provider"
+    requires_cache = False
+    access_type = "public"
+
+    def __init__(self, cache_dir: str | Path | None = None, **_: Any):
+        super().__init__()
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
+
+    @property
+    def datasets(self) -> Sequence[Any]:
+        return []
+
+    def ensure_cache_dir(self, *, required: bool | None = None) -> Path | None:
+        if required is None:
+            required = self.requires_cache
+        if required:
+            if self.cache_dir is None:
+                cache = os.environ.get("NP_NPDB_CACHE_DIR")
+                if cache:
+                    self.cache_dir = Path(cache)
+            if self.cache_dir is None:
+                raise ValueError(
+                    "A cache directory is required for this provider. "
+                    "Pass --cache-dir or set NP_NPDB_CACHE_DIR. "
+                    "This download may be large."
+                )
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            return self.cache_dir
+        return self.cache_dir
+
+    def describe(self, identifier: str) -> tuple[str, str]:
+        return identifier, self.access_type
+
+    def fetch(self, identifier: str, output_dir: str | Path, **kwargs: Any) -> Path:
+        raise NotImplementedError
+
     def add_download_observer(self, observer: DownloadObserver) -> None:
         """Register an observer to receive download progress notifications."""
         self._download_observers.append(observer)
@@ -88,7 +126,7 @@ class Manager(ABC):
             obs.on_repo_error(repo, message)
 
 
-class ProviderManager(Manager):
+class ProviderManager(ProviderManagerBase):
     provider_name: ClassVar[ProviderName] = ProviderName.GIT
     requires_cache = False
     access_type = "public"
@@ -96,10 +134,6 @@ class ProviderManager(Manager):
     def __init__(self, cache_dir: str | Path | None = None, **_: Any):
         super().__init__()
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
-
-    @property
-    def datasets(self) -> Sequence[Any]:
-        return []
 
     def ensure_cache_dir(self, *, required: bool | None = None) -> Path | None:
         if required is None:
@@ -114,7 +148,7 @@ class ProviderManager(Manager):
                     "A cache directory is required for this provider. "
                     "Pass --cache-dir or set NP_NPDB_CACHE_DIR. "
                     "This download may be large.",
-                    hint="npdb ... --cache-dir \"$HOME/.cache/npdb-downloads\"",
+                    hint='npdb ... --cache-dir "$HOME/.cache/npdb-downloads"',
                     docs="Development-Provider-Framework#shared-cache-rule",
                 )
             self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -147,7 +181,7 @@ class ProviderManager(Manager):
         raise NotImplementedError
 
 
-class GitManager(Manager):
+class GitManager(ProviderManager):
     def __init__(self, user: str, token: str, ssl_verify: bool = True):
         super().__init__()
         self._user = user
@@ -363,7 +397,9 @@ class GitManager(Manager):
 
         if cmd and cmd[0] == "git":
             require_executable(
-                "git", feature="Git downloads", hint="Install git: https://git-scm.com/downloads"
+                "git",
+                feature="Git downloads",
+                hint="Install git: https://git-scm.com/downloads",
             )
             if "annex" in cmd[1:4]:
                 require_executable(

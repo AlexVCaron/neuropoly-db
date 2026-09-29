@@ -15,7 +15,9 @@ class KaggleProviderManager(ProviderManager):
         super().__init__(cache_dir=cache_dir)
 
     def fetch(self, identifier: str, output_dir: str | Path, **_: Any) -> Path:
-        kagglehub = require_module("kagglehub", extra="kaggle", feature="The Kaggle provider")
+        kagglehub = require_module(
+            "kagglehub", extra="kaggle", feature="The Kaggle provider"
+        )
 
         cache = self.ensure_cache_dir(required=True)
         handle = identifier

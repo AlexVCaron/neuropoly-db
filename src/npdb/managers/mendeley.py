@@ -41,7 +41,9 @@ class MendeleyProviderManager(ProviderManager):
             if cache.resolve().is_relative_to(
                 output_path.resolve()
             ) or output_path.resolve().is_relative_to(cache.resolve()):
-                raise ValueError("Mendeley cache and fetched directory must not overlap.")
+                raise ValueError(
+                    "Mendeley cache and fetched directory must not overlap."
+                )
             cache.mkdir(parents=True, exist_ok=True)
         headers = {"Accept": "application/json"}
         response = httpx.get(
@@ -114,7 +116,16 @@ class MendeleyProviderManager(ProviderManager):
                 not cached and source != target and self._verified(target, size, digest)
             )
             jobs.append(
-                (file, target, source, size, digest, download_url, cached, reused_target)
+                (
+                    file,
+                    target,
+                    source,
+                    size,
+                    digest,
+                    download_url,
+                    cached,
+                    reused_target,
+                )
             )
 
         staging_bytes = sum(job[3] or 0 for job in jobs if not job[7])
@@ -124,13 +135,22 @@ class MendeleyProviderManager(ProviderManager):
         same_volume = (
             cache is not None and cache.stat().st_dev == output_path.stat().st_dev
         )
-        self._check_space(output_path, staging_bytes + (cache_bytes if same_volume else 0))
+        self._check_space(
+            output_path, staging_bytes + (cache_bytes if same_volume else 0)
+        )
         if cache is not None and not same_volume:
             self._check_space(cache, cache_bytes)
 
         total_steps = len(jobs) + 1
         for step, (
-            file, target, source, size, digest, url, cached, reused_target
+            file,
+            target,
+            source,
+            size,
+            digest,
+            url,
+            cached,
+            reused_target,
         ) in enumerate(jobs, 1):
             if cached:
                 message = f"Cache hit: {target.name}"
