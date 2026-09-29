@@ -35,6 +35,34 @@ class Manager(ABC):
     def datasets(self) -> Any:
         pass
 
+    def add_download_observer(self, observer: DownloadObserver) -> None:
+        """Register an observer to receive download progress notifications."""
+        self._download_observers.append(observer)
+
+    def _notify_file_progress(
+        self, repo: str, file: str, bytes_done: int, bytes_total: int
+    ) -> None:
+        for obs in self._download_observers:
+            obs.on_file_progress(repo, file, bytes_done, bytes_total)
+
+    def _notify_file_complete(self, repo: str, file: str) -> None:
+        for obs in self._download_observers:
+            obs.on_file_complete(repo, file)
+
+    def _notify_repo_step(
+        self, repo: str, step: str, step_num: int, total_steps: int
+    ) -> None:
+        for obs in self._download_observers:
+            obs.on_repo_step(repo, step, step_num, total_steps)
+
+    def _notify_repo_done(self, repo: str, success: bool) -> None:
+        for obs in self._download_observers:
+            obs.on_repo_done(repo, success)
+
+    def _notify_repo_error(self, repo: str, message: str) -> None:
+        for obs in self._download_observers:
+            obs.on_repo_error(repo, message)
+
 
 class ProviderManager(Manager):
     provider_name = "provider"
@@ -72,20 +100,6 @@ class ProviderManager(Manager):
 
     def fetch(self, identifier: str, output_dir: str | Path, **kwargs: Any) -> Path:
         raise NotImplementedError
-
-    def add_download_observer(self, observer: DownloadObserver) -> None:
-        """Register an observer to receive download progress notifications."""
-        self._download_observers.append(observer)
-
-    def _notify_file_progress(
-        self, repo: str, file: str, bytes_done: int, bytes_total: int
-    ) -> None:
-        for obs in self._download_observers:
-            obs.on_file_progress(repo, file, bytes_done, bytes_total)
-
-    def _notify_file_complete(self, repo: str, file: str) -> None:
-        for obs in self._download_observers:
-            obs.on_file_complete(repo, file)
 
 
 class GitManager(Manager):
@@ -261,20 +275,6 @@ class GitManager(Manager):
         )
 
         self._notify_repo_step(repo_name, "Sparse checkout complete", 4, 4)
-
-    def _notify_repo_step(
-        self, repo: str, step: str, step_num: int, total_steps: int
-    ) -> None:
-        for obs in self._download_observers:
-            obs.on_repo_step(repo, step, step_num, total_steps)
-
-    def _notify_repo_done(self, repo: str, success: bool) -> None:
-        for obs in self._download_observers:
-            obs.on_repo_done(repo, success)
-
-    def _notify_repo_error(self, repo: str, message: str) -> None:
-        for obs in self._download_observers:
-            obs.on_repo_error(repo, message)
 
     @retry(
         stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), reraise=True
