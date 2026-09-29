@@ -5,6 +5,7 @@ import tempfile
 import threading
 from abc import ABC, abstractmethod
 from base64 import b64encode
+from enum import Enum
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Callable, List
@@ -15,6 +16,16 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from npdb.cli.observers import DownloadObserver
 
 
+class ProviderName(str, Enum):
+    GIT = "git"
+    KAGGLE = "kaggle"
+    MENDELEY = "mendeley"
+    MIDRC = "midrc"
+    OPENNEURO = "openneuro"
+    ZENODO = "zenodo"
+    FIGSHARE = "figshare"
+
+
 class Manager(ABC):
     def __init__(self):
         self._download_observers: list[DownloadObserver] = []
@@ -23,6 +34,44 @@ class Manager(ABC):
     @abstractmethod
     def datasets(self) -> Any:
         pass
+
+
+class ProviderManager(Manager):
+    provider_name = "provider"
+    requires_cache = False
+    access_type = "public"
+
+    def __init__(self, cache_dir: str | Path | None = None, **_: Any):
+        super().__init__()
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
+
+    @property
+    def datasets(self) -> list[str]:
+        return []
+
+    def ensure_cache_dir(self, *, required: bool | None = None) -> Path | None:
+        if required is None:
+            required = self.requires_cache
+        if required:
+            if self.cache_dir is None:
+                cache = os.environ.get("NP_NPDB_CACHE_DIR")
+                if cache:
+                    self.cache_dir = Path(cache)
+            if self.cache_dir is None:
+                raise ValueError(
+                    "A cache directory is required for this provider. "
+                    "Pass --cache-dir or set NP_NPDB_CACHE_DIR. "
+                    "This download may be large."
+                )
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            return self.cache_dir
+        return self.cache_dir
+
+    def describe(self, identifier: str) -> tuple[str, str]:
+        return identifier, self.access_type
+
+    def fetch(self, identifier: str, output_dir: str | Path, **kwargs: Any) -> Path:
+        raise NotImplementedError
 
     def add_download_observer(self, observer: DownloadObserver) -> None:
         """Register an observer to receive download progress notifications."""
@@ -45,6 +94,10 @@ class GitManager(Manager):
         self._user = user
         self._token = token
         self._ssl_verify = ssl_verify
+
+    @property
+    def datasets(self) -> list[str]:
+        return []
 
     def git_http_config(self) -> list[str]:
         git_auth = b64encode(f"{self._user}:{self._token}".encode("utf-8")).decode(

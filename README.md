@@ -20,6 +20,7 @@ This repository hosts a collection of tools to interact with **metadata containe
 
 - [`npdb` command line tool](#npdb-command-line-tool)
   - [Prerequisites](#prerequisites)
+  - [Provider managers and auth](#provider-managers-and-auth)
   - [Installation](#installation)
   - [Usage guides](#usage-guides)
   - [Commands](#commands)
@@ -91,6 +92,22 @@ All `npdb` commands are **interactive by default** and require user input to pro
 
    > [!WARNING]
    > The `annotation-automation` extra is required for the assisted and automated workflows used by `npdb standardize bids` and `npdb convert bagel` commands. Install it with `uv sync --active --extra annotation-automation` before running those commands.
+
+### Provider managers and auth
+
+The following provider-specific `npdb convert bagel` commands are supported as provider managers and wrappers around the same conversion pipeline used by the NeuroGitea flow:
+
+- `npdb convert bagel git <repo_url> <output>`
+- `npdb convert bagel kaggle <dataset_handle> <output>`
+- `npdb convert bagel mendeley <dataset_id> <output>`
+- `npdb convert bagel midrc <manifest.json> <output>`
+- `npdb convert bagel openneuro <dataset_id> <output>`
+- `npdb convert bagel zenodo <record_id_or_doi> <output>`
+- `npdb convert bagel figshare <article_id_or_doi> <output>`
+
+For providers that require credentials or a large local cache, the repository docs and the CLI help describe the exact env vars and setup steps. For example, Kaggle and archive-only Zenodo downloads require `--cache-dir` or `NP_NPDB_CACHE_DIR`; the CLI will stop with a clear error if it is missing because the download can be large.
+
+See the provider guide: [docs/npdb/provider_managers.md](./docs/npdb/provider_managers.md).
 
 ### Usage guides
 

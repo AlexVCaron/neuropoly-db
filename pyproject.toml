@@ -48,7 +48,6 @@ all = [
   {include-group = "git"},
   {include-group = "gitea"},
   {include-group = "kaggle"},
-  {include-group = "mendeley"},
   {include-group = "midrc"},
   {include-group = "openneuro"},
   {include-group = "zenodo"},
@@ -61,9 +60,6 @@ gitea = [
 ]
 kaggle = [
   "kagglehub==1.0.2",
-]
-mendeley = [
-  "mendeley==0.3.2",
 ]
 midrc = [
   "gen3==4.28.4"
