@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
@@ -10,7 +10,7 @@ from npdb.managers.model import ProviderManager, ProviderName
 
 
 class MendeleyProviderManager(ProviderManager):
-    provider_name: ProviderName = ProviderName.MENDELEY
+    provider_name: ClassVar[ProviderName] = ProviderName.MENDELEY
     access_type = "restricted"
 
     def __init__(self, access_token: str | None = None, **_: Any):

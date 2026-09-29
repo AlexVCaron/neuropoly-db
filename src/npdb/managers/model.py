@@ -8,7 +8,7 @@ from base64 import b64encode
 from enum import Enum
 from pathlib import Path
 from queue import Empty, Queue
-from typing import Any, Callable, List
+from typing import Any, Callable, ClassVar, List, Sequence
 from urllib.parse import urlparse
 
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -32,7 +32,7 @@ class Manager(ABC):
 
     @property
     @abstractmethod
-    def datasets(self) -> Any:
+    def datasets(self) -> Sequence[Any]:
         pass
 
     def add_download_observer(self, observer: DownloadObserver) -> None:
@@ -65,7 +65,7 @@ class Manager(ABC):
 
 
 class ProviderManager(Manager):
-    provider_name: ProviderName | None = None
+    provider_name: ClassVar[ProviderName] = ProviderName.GIT
     requires_cache = False
     access_type = "public"
 
@@ -74,7 +74,7 @@ class ProviderManager(Manager):
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
 
     @property
-    def datasets(self) -> list[str]:
+    def datasets(self) -> Sequence[Any]:
         return []
 
     def ensure_cache_dir(self, *, required: bool | None = None) -> Path | None:
@@ -99,6 +99,9 @@ class ProviderManager(Manager):
         return identifier, self.access_type
 
     def fetch(self, identifier: str, output_dir: str | Path, **kwargs: Any) -> Path:
+        _ = identifier
+        _ = output_dir
+        _ = kwargs
         raise NotImplementedError
 
 
@@ -110,7 +113,7 @@ class GitManager(Manager):
         self._ssl_verify = ssl_verify
 
     @property
-    def datasets(self) -> list[str]:
+    def datasets(self) -> Sequence[Any]:
         return []
 
     def git_http_config(self) -> list[str]:

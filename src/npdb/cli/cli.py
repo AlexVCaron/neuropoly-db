@@ -17,10 +17,8 @@ from rich.progress import (
 from npdb.annotation.modes import AnnotationMode
 from npdb.cli.display import RepoDownloadDisplay
 from npdb.cli.helpers import (
-    OPTION_GROUP_NAMES,
     extend_bids_description,
     fetch_url,
-    help_option,
     is_http_url,
     looks_like_non_git_repo_error,
     read_tsv,
@@ -28,6 +26,17 @@ from npdb.cli.helpers import (
 )
 from npdb.factories import GiteaManagerFactory, ProviderManagerFactory
 from npdb.managers.model import ProviderName
+
+OPTION_GROUP_NAMES = {
+    "input": "Input Options",
+    "output": "Output Options",
+    "behavior": "Behavior Options",
+    "automation": "Automation Options",
+    "ai": "AI Options",
+    "troubleshooting": "Troubleshooting",
+}
+
+
 
 npdb = typer.Typer(
     help="NeuroPoly Database CLI for converting, standardizing, and downloading BIDS datasets.",
@@ -144,7 +153,6 @@ def local2bagel(
         ),
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     """
     [bold]Convert a local BIDS dataset to Neurobagel JSON-LD format[/bold]
@@ -367,7 +375,6 @@ def gitea2bagel(
         ),
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     """
     [bold]Convert a NeuroGitea dataset to Neurobagel JSON-LD format[/bold]
@@ -381,8 +388,6 @@ def gitea2bagel(
     The dataset is cloned from NeuroGitea first, then converted via the local
     conversion pipeline.
     """
-    from dotenv import load_dotenv
-
     from npdb.factories import GiteaManagerFactory
 
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
@@ -440,7 +445,6 @@ def git2bagel(
     ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
     header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
     extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "git",
@@ -475,7 +479,6 @@ def kaggle2bagel(
     ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
     header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
     extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "kaggle",
@@ -510,7 +513,6 @@ def mendeley2bagel(
     ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
     header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
     extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "mendeley",
@@ -546,7 +548,6 @@ def midrc2bagel(
     ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
     header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
     extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "midrc",
@@ -582,7 +583,6 @@ def openneuro2bagel(
     ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
     header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
     extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "openneuro",
@@ -618,7 +618,6 @@ def zenodo2bagel(
     ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
     header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
     extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "zenodo",
@@ -654,7 +653,6 @@ def figshare2bagel(
     ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
     header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
     extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "figshare",
@@ -718,13 +716,12 @@ def download(
         help="Print each git command before it runs (git mode only).",
         rich_help_panel=OPTION_GROUP_NAMES["troubleshooting"],
     ),
-    help_: bool = help_option(),
 ):
     """
     [bold]Download imaging data from query results TSV[/bold]
 
-        This command reads a TSV file containing query results and automatically
-        selects the download protocol per dataset:
+    This command reads a TSV file containing query results and automatically
+    selects the download protocol per dataset:
 
     * [cyan]HTTP:[/cyan] If [bold]AccessLink[/bold] is present for the dataset, download from
       link(s) directly.
@@ -732,7 +729,7 @@ def download(
     * [cyan]Git-annex:[/cyan] If the repository exposes a [bold]git-annex[/bold] branch,
       run annex content retrieval after git checkout.
 
-        Backend selection is automatic and can differ by dataset within the same TSV.
+    Backend selection is automatic and can differ by dataset within the same TSV.
 
     Git operations require [bold]NP_GITEA_APP_URL[/bold], [bold]NP_GITEA_APP_USER[/bold],
     and [bold]NP_GITEA_APP_TOKEN[/bold] environment variables.
@@ -964,7 +961,6 @@ def standardize_bids(
         exists=True,
         rich_help_panel=OPTION_GROUP_NAMES["input"],
     ),
-    help_: bool = help_option(),
 ):
     """
     [bold]Standardize BIDS dataset participants.tsv and participants.json[/bold]

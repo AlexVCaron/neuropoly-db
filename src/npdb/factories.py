@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from npdb.annotation import AnnotationConfig
+from npdb.annotation.modes import AnnotationMode
 from npdb.managers.figshare import FigshareProviderManager
 from npdb.managers.git import GitProviderManager
 from npdb.managers.kaggle import KaggleProviderManager
@@ -145,7 +146,7 @@ class AnnotationConfigFactory:
     def create_from_cli_args(
         cls,
         *,
-        mode: str,
+        mode: str | AnnotationMode,
         headless: bool = True,
         timeout: int = 300,
         artifacts_dir: Path | None = None,
@@ -161,8 +162,9 @@ class AnnotationConfigFactory:
         Build an :class:`AnnotationConfig` from keyword arguments that mirror
         the CLI option names.
         """
+        mode_value = AnnotationMode(mode) if isinstance(mode, str) else mode
         return AnnotationConfig(
-            mode=mode,
+            mode=mode_value,
             headless=headless,
             timeout=timeout,
             artifacts_dir=artifacts_dir,
@@ -200,6 +202,10 @@ class AIClientFactory:
             ImportError: if the required provider library is not installed.
         """
         provider_lower = provider.lower()
+        if not model:
+            raise ValueError(
+                f"AI provider '{provider}' requires a non-empty model name."
+            )
 
         if provider_lower == "ollama":
             try:

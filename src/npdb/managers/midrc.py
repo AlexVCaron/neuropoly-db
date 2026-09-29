@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
@@ -11,7 +11,7 @@ from npdb.managers.model import ProviderManager, ProviderName
 
 
 class MIDRCProviderManager(ProviderManager):
-    provider_name: ProviderName = ProviderName.MIDRC
+    provider_name: ClassVar[ProviderName] = ProviderName.MIDRC
     access_type = "restricted"
 
     def __init__(

@@ -8,9 +8,20 @@ from typing import Optional
 import typer
 
 from npdb.annotation.modes import AnnotationMode
-from npdb.cli.helpers import OPTION_GROUP_NAMES, help_option
 from npdb.factories import GiteaManagerFactory, ProviderManagerFactory
 from npdb.managers.model import ProviderName
+
+
+OPTION_GROUP_NAMES = {
+    "input": "Input Options",
+    "output": "Output Options",
+    "behavior": "Behavior Options",
+    "automation": "Automation Options",
+    "ai": "AI Options",
+    "troubleshooting": "Troubleshooting",
+}
+
+
 
 bagel = typer.Typer(
     help="Convert BIDS datasets to Neurobagel JSON-LD (from local folders or NeuroGitea).",
@@ -160,7 +171,6 @@ def local2bagel(
         ),
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     """
     [bold]Convert a local BIDS dataset to Neurobagel JSON-LD format[/bold]
@@ -323,7 +333,6 @@ def gitea2bagel(
         ),
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     """
     [bold]Convert a NeuroGitea dataset to Neurobagel JSON-LD format[/bold]
@@ -434,7 +443,6 @@ def git2bagel(
         help="Use NeuroPoly custom modality mappings by default.",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "git",
@@ -531,7 +539,6 @@ def kaggle2bagel(
         help="Use NeuroPoly custom modality mappings by default.",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "kaggle",
@@ -621,7 +628,6 @@ def mendeley2bagel(
         help="Use NeuroPoly custom modality mappings by default.",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "mendeley",
@@ -719,7 +725,6 @@ def midrc2bagel(
         help="Use NeuroPoly custom modality mappings by default.",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "midrc",
@@ -817,7 +822,6 @@ def openneuro2bagel(
         help="Use NeuroPoly custom modality mappings by default.",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "openneuro",
@@ -917,7 +921,6 @@ def zenodo2bagel(
         help="Use NeuroPoly custom modality mappings by default.",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "zenodo",
@@ -1008,7 +1011,6 @@ def figshare2bagel(
         help="Use NeuroPoly custom modality mappings by default.",
         rich_help_panel=OPTION_GROUP_NAMES["behavior"],
     ),
-    help_: bool = help_option(),
 ):
     _provider_call(
         "figshare",
