@@ -66,12 +66,23 @@ All `npdb` commands are **interactive by default** and require user input to pro
    uv sync --active
    ```
 
-3. (Optional) If you intend on using the **assisted or automated modes** for BIDS standardization and conversion to NeuroBagel (see commands below), you need to **install additional dependencies**. Run the following commands to install them :
+   > [!IMPORTANT]
+   > The project uses uv dependency groups for optional installs. Use the correct group before running commands that depend on it:
+   >
+   > - Core CLI: `uv sync --active`
+   > - Development tools: `uv sync --active --group dev`
+   > - All optional integrations: `uv sync --active --group all`
+   > - Provider-specific groups: `uv sync --active --group git gitea openneuro ...`
+
+3. (Optional) If you intend on using the **assisted or automated modes** for BIDS standardization and conversion to NeuroBagel (see commands below), you need to **install the automation extra**. Run the following commands to install it :
 
     ```bash
-    uv sync --active --quiet --extra annotation-automation
+    uv sync --active --extra annotation-automation
     uv run playwright install --with-deps chromium
     ```
+
+   > [!WARNING]
+   > The `annotation-automation` extra is required for the assisted and automated workflows used by `npdb standardize bids` and `npdb convert bagel` commands. Install it with `uv sync --active --extra annotation-automation` before running those commands.
 
 ### Usage guides
 
@@ -124,11 +135,15 @@ All `npdb` commands are **interactive by default** and require user input to pro
 
 #### Developer installation
 
-First, run the [installation procedure above](#installation). Then, install the full development environment using :
+First, run the [installation procedure above](#installation). Then, install the development and integration groups required for local work using :
 
 ```bash
-uv sync --active --quiet --all-extras
+uv sync --active --group dev
+uv sync --active --group all
 ```
+
+> [!WARNING]
+> The `dev` group installs test and lint tools needed for development work, while the `all` group installs the provider integrations (`git`, `gitea`, `kaggle`, `mendeley`, `openneuro`, `zenodo`). Install the required group before running commands that rely on those packages.
 
 #### Components
 
