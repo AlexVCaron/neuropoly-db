@@ -6,11 +6,11 @@ from typing import Any
 
 import httpx
 
-from npdb.managers.model import ProviderManager
+from npdb.managers.model import ProviderManager, ProviderName
 
 
 class MendeleyProviderManager(ProviderManager):
-    provider_name = "mendeley"
+    provider_name: ProviderName = ProviderName.MENDELEY
     access_type = "restricted"
 
     def __init__(self, access_token: str | None = None, **_: Any):
@@ -30,7 +30,9 @@ class MendeleyProviderManager(ProviderManager):
         payload = response.json()
         files = payload.get("files") or []
         if not files:
-            raise ValueError(f"No files were returned for Mendeley dataset '{identifier}'.")
+            raise ValueError(
+                f"No files were returned for Mendeley dataset '{identifier}'."
+            )
 
         for file in files:
             file_name = file.get("filename") or file.get("name") or "download.bin"

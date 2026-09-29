@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from npdb.managers.model import ProviderManager
+from npdb.managers.model import ProviderManager, ProviderName
 
 
 class OpenNeuroProviderManager(ProviderManager):
-    provider_name = "openneuro"
+    provider_name: ProviderName = ProviderName.OPENNEURO
 
     def fetch(self, identifier: str, output_dir: str | Path, **kwargs: Any) -> Path:
         try:

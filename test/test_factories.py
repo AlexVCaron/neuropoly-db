@@ -17,6 +17,7 @@ from npdb.factories import (
     ProviderManagerFactory,
 )
 from npdb.managers.kaggle import KaggleProviderManager
+from npdb.managers.model import ProviderName
 from npdb.report import RunLedger
 
 # ── GiteaManagerFactory ────────────────────────────────────────────
@@ -179,6 +180,14 @@ class TestProviderManagerFactory:
         manager = ProviderManagerFactory.create("kaggle", cache_dir=tmp_path)
         assert isinstance(manager, KaggleProviderManager)
         assert manager.cache_dir == tmp_path
+        assert isinstance(manager.provider_name, ProviderName)
+        assert manager.provider_name == ProviderName.KAGGLE
+
+    def test_provider_name_enum_is_used_for_provider_selection(self):
+        manager = ProviderManagerFactory.create(ProviderName.OPENNEURO)
+        assert isinstance(manager.provider_name, ProviderName)
+        assert manager.provider_name == ProviderName.OPENNEURO
+        assert ProviderName("openneuro") == ProviderName.OPENNEURO
 
     def test_creates_midrc_manager_from_env(self, tmp_path):
         creds = tmp_path / "credentials.json"
