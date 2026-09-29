@@ -37,7 +37,6 @@ OPTION_GROUP_NAMES = {
 }
 
 
-
 npdb = typer.Typer(
     help="NeuroPoly Database CLI for converting, standardizing, and downloading BIDS datasets.",
     context_settings={"help_option_names": ["--help", "-h"]},
@@ -53,7 +52,10 @@ def main():
 
 
 convert = typer.Typer(
-    help="Conversion commands for neuroimaging dataset metadata and formats.",
+    help=(
+        "Dataset conversion workflows for standardizing and ingesting BIDS data "
+        "into the Neurobagel JSON-LD format."
+    ),
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
@@ -61,7 +63,13 @@ npdb.add_typer(convert, name="convert")
 
 
 bagel = typer.Typer(
-    help="Convert BIDS datasets to Neurobagel JSON-LD (from local folders or NeuroGitea).",
+    help=(
+        "Convert dataset metadata into Neurobagel JSON-LD. The pipeline downloads or "
+        "loads the source dataset, normalizes the tabular metadata, and writes the "
+        "resulting Neurobagel output. Dataset access requirements vary by backend; "
+        "see the provider guide in docs/npdb/provider_managers.md and the "
+        "environment template in template.env."
+    ),
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
@@ -155,13 +163,21 @@ def local2bagel(
     ),
 ):
     """
-    [bold]Convert a local BIDS dataset to Neurobagel JSON-LD format[/bold]
+    [bold]Convert local dataset metadata to Neurobagel JSON-LD[/bold]
 
-    This command automates annotation of phenotypic data using the selected mode:
-    * [cyan]manual[/cyan]: Interactive annotation tool
-    * [cyan]assist[/cyan]: Browser automation with user confirmation
-    * [cyan]auto[/cyan]: Fully automated with ML-based suggestions
-    * [cyan]full-auto[/cyan]: Experimental unattended mode (requires review!)
+    Use this when the dataset is already on disk and you need to convert the
+    tabular metadata into Neurobagel format. The command reads the dataset's
+    metadata files, standardizes them, resolves phenotype mappings, and writes
+    the final Neurobagel output in the selected directory.
+
+    This flow does not require remote credentials for a local dataset. Access is
+    governed by the dataset's local filesystem permissions only.
+
+    Annotation modes:
+    * [cyan]manual[/cyan]: interactive annotation and review
+    * [cyan]assist[/cyan]: browser-assisted annotation with user confirmation
+    * [cyan]auto[/cyan]: automated annotation using model suggestions
+    * [cyan]full-auto[/cyan]: fully unattended conversion (use with caution)
     """
     import asyncio
 
@@ -279,7 +295,10 @@ def _provider_call(
         else str(manager.provider_name)
     )
 
-    local_fetch = Path(output).parent / f"{provider_id}_{Path(identifier).name if hasattr(identifier, 'name') else identifier.replace('/', '_')}"
+    local_fetch = (
+        Path(output).parent
+        / f"{provider_id}_{Path(identifier).name if hasattr(identifier, 'name') else identifier.replace('/', '_')}"
+    )
     fetched = manager.fetch(identifier, local_fetch, **kwargs)
 
     local2bagel(
@@ -377,16 +396,20 @@ def gitea2bagel(
     ),
 ):
     """
-    [bold]Convert a NeuroGitea dataset to Neurobagel JSON-LD format[/bold]
+    [bold]Convert NeuroGitea dataset metadata to Neurobagel JSON-LD[/bold]
 
-    This command automates annotation of phenotypic data using the selected mode:
-    * [cyan]manual[/cyan]: Interactive annotation tool
-    * [cyan]assist[/cyan]: Browser automation with user confirmation
-    * [cyan]auto[/cyan]: Fully automated with ML-based suggestions
-    * [cyan]full-auto[/cyan]: Experimental unattended mode (requires review!)
+    This command resolves a dataset from the configured neurogitea instance,
+    clones it locally, and then runs the metadata conversion flow: metadata
+    normalization, phenotype resolution, and Neurobagel export.
 
-    The dataset is cloned from NeuroGitea first, then converted via the local
-    conversion pipeline.
+    Access requirements:
+    * Requires the Gitea/Forgejo connection variables in .env or the environment:
+      [cyan]NP_GITEA_APP_URL[/cyan], [cyan]NP_GITEA_APP_USER[/cyan],
+      [cyan]NP_GITEA_APP_TOKEN[/cyan].
+    * Private or restricted datasets may also require the instance-specific SSH
+      or token access described in the Gitea setup docs.
+    * If the dataset itself is public, token-based authentication is often not
+      required beyond repository access policies.
     """
     from npdb.factories import GiteaManagerFactory
 
@@ -425,7 +448,14 @@ def gitea2bagel(
 @bagel.command("git")
 def git2bagel(
     repository: str = typer.Argument(..., help="Git repository URL or path to clone."),
-    output: Path = typer.Argument(..., help="Output directory for generated Neurobagel files.", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
+    output: Path = typer.Argument(
+        ...,
+        help="Output directory for generated Neurobagel files.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
     cache_dir: Optional[Path] = typer.Option(
         None,
         "--cache-dir",
@@ -436,16 +466,78 @@ def git2bagel(
         resolve_path=True,
         rich_help_panel=OPTION_GROUP_NAMES["input"],
     ),
-    mode: str = typer.Option(AnnotationMode.MANUAL.value, help="Annotation mode: manual|assist|auto|full-auto", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    phenotype_dict: Optional[Path] = typer.Option(None, help="Path to phenotype dictionary JSON for prefill.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    headless: bool = typer.Option(True, "--headless/--headed", help="Run browser in headless mode (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    timeout: int = typer.Option(300, help="Timeout per step in seconds (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    artifacts_dir: Optional[Path] = typer.Option(None, help="Directory for screenshots/traces (automation modes).", file_okay=False, dir_okay=True, writable=True, rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    ai_provider: Optional[str] = typer.Option(None, help="AI provider (e.g., 'ollama').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
+    mode: str = typer.Option(
+        AnnotationMode.MANUAL.value,
+        help="Annotation mode: manual|assist|auto|full-auto",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
+    phenotype_dict: Optional[Path] = typer.Option(
+        None,
+        help="Path to phenotype dictionary JSON for prefill.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    headless: bool = typer.Option(
+        True,
+        "--headless/--headed",
+        help="Run browser in headless mode (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    timeout: int = typer.Option(
+        300,
+        help="Timeout per step in seconds (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    artifacts_dir: Optional[Path] = typer.Option(
+        None,
+        help="Directory for screenshots/traces (automation modes).",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    ai_provider: Optional[str] = typer.Option(
+        None,
+        help="AI provider (e.g., 'ollama').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    ai_model: Optional[str] = typer.Option(
+        None,
+        help="AI model name (e.g., 'neural-chat').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    header_map: Optional[Path] = typer.Option(
+        None,
+        "--header-map",
+        help="JSON file mapping desired Neurobagel headers to input variants.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    extend_modalities: bool = typer.Option(
+        True,
+        "--extend-modalities/--neurobagel-modalities",
+        help="Use NeuroPoly custom modality mappings by default.",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
 ):
+    """
+    [bold]Convert Git repository metadata to Neurobagel JSON-LD[/bold]
+
+    This command clones or reuses a Git repository, stages the dataset locally,
+    and then runs the metadata conversion sequence used by the other Bagel
+    providers: metadata normalization, phenotype standardization, and output
+    export.
+
+    Access requirements:
+    * Public repositories are usually usable without credentials.
+    * Private repositories may require Git HTTP credentials via
+      [cyan]NP_GIT_USER[/cyan] and [cyan]NP_GIT_TOKEN[/cyan].
+    * Large repositories or archive-heavy datasets should use a persistent
+      [cyan]--cache-dir[/cyan] so the local staging step is not exhausted by a
+      temporary download location.
+    * See the provider documentation in [cyan]docs/npdb/provider_managers.md[/cyan]
+      and the environment template in [cyan]template.env[/cyan].
+    """
     _provider_call(
         "git",
         repository,
@@ -467,19 +559,95 @@ def git2bagel(
 
 @bagel.command("kaggle")
 def kaggle2bagel(
-    dataset: str = typer.Argument(..., help="Kaggle dataset handle (for example: 'user/dataset_name')."),
-    output: Path = typer.Argument(..., help="Output directory for generated Neurobagel files.", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
-    cache_dir: Optional[Path] = typer.Option(None, "--cache-dir", help="Required. Local cache for the full Kaggle dataset download; this could be large.", file_okay=False, dir_okay=True, writable=True, resolve_path=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    mode: str = typer.Option(AnnotationMode.MANUAL.value, help="Annotation mode: manual|assist|auto|full-auto", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    phenotype_dict: Optional[Path] = typer.Option(None, help="Path to phenotype dictionary JSON for prefill.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    headless: bool = typer.Option(True, "--headless/--headed", help="Run browser in headless mode (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    timeout: int = typer.Option(300, help="Timeout per step in seconds (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    artifacts_dir: Optional[Path] = typer.Option(None, help="Directory for screenshots/traces (automation modes).", file_okay=False, dir_okay=True, writable=True, rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    ai_provider: Optional[str] = typer.Option(None, help="AI provider (e.g., 'ollama').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
+    dataset: str = typer.Argument(
+        ..., help="Kaggle dataset handle (for example: 'user/dataset_name')."
+    ),
+    output: Path = typer.Argument(
+        ...,
+        help="Output directory for generated Neurobagel files.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
+    cache_dir: Optional[Path] = typer.Option(
+        None,
+        "--cache-dir",
+        help="Required. Local cache for the full Kaggle dataset download; this could be large.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    mode: str = typer.Option(
+        AnnotationMode.MANUAL.value,
+        help="Annotation mode: manual|assist|auto|full-auto",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
+    phenotype_dict: Optional[Path] = typer.Option(
+        None,
+        help="Path to phenotype dictionary JSON for prefill.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    headless: bool = typer.Option(
+        True,
+        "--headless/--headed",
+        help="Run browser in headless mode (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    timeout: int = typer.Option(
+        300,
+        help="Timeout per step in seconds (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    artifacts_dir: Optional[Path] = typer.Option(
+        None,
+        help="Directory for screenshots/traces (automation modes).",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    ai_provider: Optional[str] = typer.Option(
+        None,
+        help="AI provider (e.g., 'ollama').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    ai_model: Optional[str] = typer.Option(
+        None,
+        help="AI model name (e.g., 'neural-chat').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    header_map: Optional[Path] = typer.Option(
+        None,
+        "--header-map",
+        help="JSON file mapping desired Neurobagel headers to input variants.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    extend_modalities: bool = typer.Option(
+        True,
+        "--extend-modalities/--neurobagel-modalities",
+        help="Use NeuroPoly custom modality mappings by default.",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
 ):
+    """
+    [bold]Convert Kaggle dataset metadata to Neurobagel JSON-LD[/bold]
+
+    This command downloads the Kaggle dataset into a local cache or working
+    directory, stages the dataset locally, and converts its metadata into the
+    Neurobagel format.
+
+    Access requirements:
+    * Public Kaggle datasets may work without authentication.
+    * Private datasets require [cyan]NP_KAGGLE_USERNAME[/cyan] and
+      [cyan]NP_KAGGLE_KEY[/cyan].
+    * Large downloads should use [cyan]--cache-dir[/cyan] because the dataset may be
+      sizable and may require long staging time.
+    """
     _provider_call(
         "kaggle",
         dataset,
@@ -502,18 +670,88 @@ def kaggle2bagel(
 @bagel.command("mendeley")
 def mendeley2bagel(
     dataset: str = typer.Argument(..., help="Mendeley Data dataset ID or DOI."),
-    output: Path = typer.Argument(..., help="Output directory for generated Neurobagel files.", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
-    token: Optional[str] = typer.Option(None, help="Optional Mendeley access token. Or set NP_MENDELEY_ACCESS_TOKEN.", rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    mode: str = typer.Option(AnnotationMode.MANUAL.value, help="Annotation mode: manual|assist|auto|full-auto", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    phenotype_dict: Optional[Path] = typer.Option(None, help="Path to phenotype dictionary JSON for prefill.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    headless: bool = typer.Option(True, "--headless/--headed", help="Run browser in headless mode (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    timeout: int = typer.Option(300, help="Timeout per step in seconds (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    artifacts_dir: Optional[Path] = typer.Option(None, help="Directory for screenshots/traces (automation modes).", file_okay=False, dir_okay=True, writable=True, rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    ai_provider: Optional[str] = typer.Option(None, help="AI provider (e.g., 'ollama').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
+    output: Path = typer.Argument(
+        ...,
+        help="Output directory for generated Neurobagel files.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
+    token: Optional[str] = typer.Option(
+        None,
+        help="Optional Mendeley access token. Or set NP_MENDELEY_ACCESS_TOKEN.",
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    mode: str = typer.Option(
+        AnnotationMode.MANUAL.value,
+        help="Annotation mode: manual|assist|auto|full-auto",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
+    phenotype_dict: Optional[Path] = typer.Option(
+        None,
+        help="Path to phenotype dictionary JSON for prefill.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    headless: bool = typer.Option(
+        True,
+        "--headless/--headed",
+        help="Run browser in headless mode (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    timeout: int = typer.Option(
+        300,
+        help="Timeout per step in seconds (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    artifacts_dir: Optional[Path] = typer.Option(
+        None,
+        help="Directory for screenshots/traces (automation modes).",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    ai_provider: Optional[str] = typer.Option(
+        None,
+        help="AI provider (e.g., 'ollama').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    ai_model: Optional[str] = typer.Option(
+        None,
+        help="AI model name (e.g., 'neural-chat').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    header_map: Optional[Path] = typer.Option(
+        None,
+        "--header-map",
+        help="JSON file mapping desired Neurobagel headers to input variants.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    extend_modalities: bool = typer.Option(
+        True,
+        "--extend-modalities/--neurobagel-modalities",
+        help="Use NeuroPoly custom modality mappings by default.",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
 ):
+    """
+    [bold]Convert Mendeley dataset metadata to Neurobagel JSON-LD[/bold]
+
+    Download the dataset from Mendeley, stage it locally, and convert the
+    metadata records into the Neurobagel format. The command is useful when a
+    dataset is exposed through a public or controlled Mendeley archive.
+
+    Access requirements:
+    * Public Mendeley archives may work without authentication.
+    * Restricted or access-controlled datasets usually require an access token or
+      app credentials, via [cyan]NP_MENDELEY_ACCESS_TOKEN[/cyan] and the related
+      Mendeley client variables.
+    * See the provider guide and the template environment file for the required
+      variables.
+    """
     _provider_call(
         "mendeley",
         dataset,
@@ -535,20 +773,95 @@ def mendeley2bagel(
 
 @bagel.command("midrc")
 def midrc2bagel(
-    manifest: str = typer.Argument(..., help="MIDRC manifest JSON file or GUID to download."),
-    output: Path = typer.Argument(..., help="Output directory for generated Neurobagel files.", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
-    credentials_path: Optional[Path] = typer.Option(None, help="Path to the MIDRC credentials.json file. Or set NP_MIDRC_CREDENTIALS.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    endpoint: Optional[str] = typer.Option(None, help="MIDRC endpoint. Defaults to https://data.midrc.org.", rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    mode: str = typer.Option(AnnotationMode.MANUAL.value, help="Annotation mode: manual|assist|auto|full-auto", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    phenotype_dict: Optional[Path] = typer.Option(None, help="Path to phenotype dictionary JSON for prefill.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    headless: bool = typer.Option(True, "--headless/--headed", help="Run browser in headless mode (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    timeout: int = typer.Option(300, help="Timeout per step in seconds (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    artifacts_dir: Optional[Path] = typer.Option(None, help="Directory for screenshots/traces (automation modes).", file_okay=False, dir_okay=True, writable=True, rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    ai_provider: Optional[str] = typer.Option(None, help="AI provider (e.g., 'ollama').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
+    manifest: str = typer.Argument(
+        ..., help="MIDRC manifest JSON file or GUID to download."
+    ),
+    output: Path = typer.Argument(
+        ...,
+        help="Output directory for generated Neurobagel files.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
+    credentials_path: Optional[Path] = typer.Option(
+        None,
+        help="Path to the MIDRC credentials.json file. Or set NP_MIDRC_CREDENTIALS.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    endpoint: Optional[str] = typer.Option(
+        None,
+        help="MIDRC endpoint. Defaults to https://data.midrc.org.",
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    mode: str = typer.Option(
+        AnnotationMode.MANUAL.value,
+        help="Annotation mode: manual|assist|auto|full-auto",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
+    phenotype_dict: Optional[Path] = typer.Option(
+        None,
+        help="Path to phenotype dictionary JSON for prefill.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    headless: bool = typer.Option(
+        True,
+        "--headless/--headed",
+        help="Run browser in headless mode (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    timeout: int = typer.Option(
+        300,
+        help="Timeout per step in seconds (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    artifacts_dir: Optional[Path] = typer.Option(
+        None,
+        help="Directory for screenshots/traces (automation modes).",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    ai_provider: Optional[str] = typer.Option(
+        None,
+        help="AI provider (e.g., 'ollama').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    ai_model: Optional[str] = typer.Option(
+        None,
+        help="AI model name (e.g., 'neural-chat').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    header_map: Optional[Path] = typer.Option(
+        None,
+        "--header-map",
+        help="JSON file mapping desired Neurobagel headers to input variants.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    extend_modalities: bool = typer.Option(
+        True,
+        "--extend-modalities/--neurobagel-modalities",
+        help="Use NeuroPoly custom modality mappings by default.",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
 ):
+    """
+    [bold]Convert MIDRC dataset metadata to Neurobagel JSON-LD[/bold]
+
+    This command resolves a MIDRC manifest or dataset identifier, downloads the
+    related files, and converts the dataset metadata into Neurobagel format.
+
+    Access requirements:
+    * Restricted MIDRC data requires credentials from the MIDRC portal.
+    * Provide the credentials file through [cyan]NP_MIDRC_CREDENTIALS[/cyan] or the
+      [cyan]--credentials-path[/cyan] option.
+    * The endpoint is usually the default MIDRC endpoint unless you are using a
+      custom instance.
+    """
     _provider_call(
         "midrc",
         manifest,
@@ -571,19 +884,94 @@ def midrc2bagel(
 
 @bagel.command("openneuro")
 def openneuro2bagel(
-    dataset: str = typer.Argument(..., help="OpenNeuro dataset ID (for example: ds002799)."),
-    output: Path = typer.Argument(..., help="Output directory for generated Neurobagel files.", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
-    cache_dir: Optional[Path] = typer.Option(None, "--cache-dir", help="Optional local cache. Default is a temp directory for sparse metadata downloads.", file_okay=False, dir_okay=True, writable=True, resolve_path=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    mode: str = typer.Option(AnnotationMode.MANUAL.value, help="Annotation mode: manual|assist|auto|full-auto", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    phenotype_dict: Optional[Path] = typer.Option(None, help="Path to phenotype dictionary JSON for prefill.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    headless: bool = typer.Option(True, "--headless/--headed", help="Run browser in headless mode (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    timeout: int = typer.Option(300, help="Timeout per step in seconds (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    artifacts_dir: Optional[Path] = typer.Option(None, help="Directory for screenshots/traces (automation modes).", file_okay=False, dir_okay=True, writable=True, rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    ai_provider: Optional[str] = typer.Option(None, help="AI provider (e.g., 'ollama').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
+    dataset: str = typer.Argument(
+        ..., help="OpenNeuro dataset ID (for example: ds002799)."
+    ),
+    output: Path = typer.Argument(
+        ...,
+        help="Output directory for generated Neurobagel files.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
+    cache_dir: Optional[Path] = typer.Option(
+        None,
+        "--cache-dir",
+        help="Optional local cache. Default is a temp directory for sparse metadata downloads.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    mode: str = typer.Option(
+        AnnotationMode.MANUAL.value,
+        help="Annotation mode: manual|assist|auto|full-auto",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
+    phenotype_dict: Optional[Path] = typer.Option(
+        None,
+        help="Path to phenotype dictionary JSON for prefill.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    headless: bool = typer.Option(
+        True,
+        "--headless/--headed",
+        help="Run browser in headless mode (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    timeout: int = typer.Option(
+        300,
+        help="Timeout per step in seconds (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    artifacts_dir: Optional[Path] = typer.Option(
+        None,
+        help="Directory for screenshots/traces (automation modes).",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    ai_provider: Optional[str] = typer.Option(
+        None,
+        help="AI provider (e.g., 'ollama').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    ai_model: Optional[str] = typer.Option(
+        None,
+        help="AI model name (e.g., 'neural-chat').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    header_map: Optional[Path] = typer.Option(
+        None,
+        "--header-map",
+        help="JSON file mapping desired Neurobagel headers to input variants.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    extend_modalities: bool = typer.Option(
+        True,
+        "--extend-modalities/--neurobagel-modalities",
+        help="Use NeuroPoly custom modality mappings by default.",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
 ):
+    """
+    [bold]Convert OpenNeuro dataset metadata to Neurobagel JSON-LD[/bold]
+
+    OpenNeuro is a common public BIDS repository, so this command is often used
+    for publicly accessible datasets. Once the dataset is staged locally, the
+    command converts the metadata records into Neurobagel format.
+
+    Access requirements:
+    * Public datasets usually work without credentials.
+    * Restricted or private datasets may require [cyan]NP_OPENNEURO_TOKEN[/cyan].
+    * Use [cyan]--cache-dir[/cyan] when downloads are large or when a persistent
+      local staging area is preferable.
+    """
     _provider_call(
         "openneuro",
         dataset,
@@ -606,19 +994,98 @@ def openneuro2bagel(
 @bagel.command("zenodo")
 def zenodo2bagel(
     record: str = typer.Argument(..., help="Zenodo record ID or DOI."),
-    output: Path = typer.Argument(..., help="Output directory for generated Neurobagel files.", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
-    cache_dir: Optional[Path] = typer.Option(None, "--cache-dir", help="Required when record files are archive-only or the download is large.", file_okay=False, dir_okay=True, writable=True, resolve_path=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    token: Optional[str] = typer.Option(None, help="Optional Zenodo access token. Or set NP_ZENODO_TOKEN.", rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    mode: str = typer.Option(AnnotationMode.MANUAL.value, help="Annotation mode: manual|assist|auto|full-auto", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    phenotype_dict: Optional[Path] = typer.Option(None, help="Path to phenotype dictionary JSON for prefill.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    headless: bool = typer.Option(True, "--headless/--headed", help="Run browser in headless mode (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    timeout: int = typer.Option(300, help="Timeout per step in seconds (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    artifacts_dir: Optional[Path] = typer.Option(None, help="Directory for screenshots/traces (automation modes).", file_okay=False, dir_okay=True, writable=True, rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    ai_provider: Optional[str] = typer.Option(None, help="AI provider (e.g., 'ollama').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
+    output: Path = typer.Argument(
+        ...,
+        help="Output directory for generated Neurobagel files.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
+    cache_dir: Optional[Path] = typer.Option(
+        None,
+        "--cache-dir",
+        help="Required when record files are archive-only or the download is large.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    token: Optional[str] = typer.Option(
+        None,
+        help="Optional Zenodo access token. Or set NP_ZENODO_TOKEN.",
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    mode: str = typer.Option(
+        AnnotationMode.MANUAL.value,
+        help="Annotation mode: manual|assist|auto|full-auto",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
+    phenotype_dict: Optional[Path] = typer.Option(
+        None,
+        help="Path to phenotype dictionary JSON for prefill.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    headless: bool = typer.Option(
+        True,
+        "--headless/--headed",
+        help="Run browser in headless mode (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    timeout: int = typer.Option(
+        300,
+        help="Timeout per step in seconds (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    artifacts_dir: Optional[Path] = typer.Option(
+        None,
+        help="Directory for screenshots/traces (automation modes).",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    ai_provider: Optional[str] = typer.Option(
+        None,
+        help="AI provider (e.g., 'ollama').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    ai_model: Optional[str] = typer.Option(
+        None,
+        help="AI model name (e.g., 'neural-chat').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    header_map: Optional[Path] = typer.Option(
+        None,
+        "--header-map",
+        help="JSON file mapping desired Neurobagel headers to input variants.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    extend_modalities: bool = typer.Option(
+        True,
+        "--extend-modalities/--neurobagel-modalities",
+        help="Use NeuroPoly custom modality mappings by default.",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
 ):
+    """
+    [bold]Convert Zenodo record metadata to Neurobagel JSON-LD[/bold]
+
+    This command resolves a Zenodo record or DOI, downloads the archive or files
+    into a working directory, and converts the metadata into Neurobagel format.
+    It is particularly useful for public records and for datasets with a large or
+    archive-only payload.
+
+    Access requirements:
+    * Public records often work without a token.
+    * Embargoed, restricted, or archive-only records may require
+      [cyan]NP_ZENODO_TOKEN[/cyan].
+    * Large downloads should use [cyan]--cache-dir[/cyan] and the local cache is
+      strongly recommended for archive-based datasets.
+    """
     _provider_call(
         "zenodo",
         record,
@@ -642,18 +1109,87 @@ def zenodo2bagel(
 @bagel.command("figshare")
 def figshare2bagel(
     article: str = typer.Argument(..., help="Figshare article ID or DOI."),
-    output: Path = typer.Argument(..., help="Output directory for generated Neurobagel files.", file_okay=False, dir_okay=True, writable=True, resolve_path=True),
-    token: Optional[str] = typer.Option(None, help="Optional Figshare access token. Or set NP_FIGSHARE_TOKEN.", rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    mode: str = typer.Option(AnnotationMode.MANUAL.value, help="Annotation mode: manual|assist|auto|full-auto", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
-    phenotype_dict: Optional[Path] = typer.Option(None, help="Path to phenotype dictionary JSON for prefill.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    headless: bool = typer.Option(True, "--headless/--headed", help="Run browser in headless mode (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    timeout: int = typer.Option(300, help="Timeout per step in seconds (automation modes).", rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    artifacts_dir: Optional[Path] = typer.Option(None, help="Directory for screenshots/traces (automation modes).", file_okay=False, dir_okay=True, writable=True, rich_help_panel=OPTION_GROUP_NAMES["automation"]),
-    ai_provider: Optional[str] = typer.Option(None, help="AI provider (e.g., 'ollama').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    ai_model: Optional[str] = typer.Option(None, help="AI model name (e.g., 'neural-chat').", rich_help_panel=OPTION_GROUP_NAMES["ai"]),
-    header_map: Optional[Path] = typer.Option(None, "--header-map", help="JSON file mapping desired Neurobagel headers to input variants.", exists=True, rich_help_panel=OPTION_GROUP_NAMES["input"]),
-    extend_modalities: bool = typer.Option(True, "--extend-modalities/--neurobagel-modalities", help="Use NeuroPoly custom modality mappings by default.", rich_help_panel=OPTION_GROUP_NAMES["behavior"]),
+    output: Path = typer.Argument(
+        ...,
+        help="Output directory for generated Neurobagel files.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+    ),
+    token: Optional[str] = typer.Option(
+        None,
+        help="Optional Figshare access token. Or set NP_FIGSHARE_TOKEN.",
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    mode: str = typer.Option(
+        AnnotationMode.MANUAL.value,
+        help="Annotation mode: manual|assist|auto|full-auto",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
+    phenotype_dict: Optional[Path] = typer.Option(
+        None,
+        help="Path to phenotype dictionary JSON for prefill.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    headless: bool = typer.Option(
+        True,
+        "--headless/--headed",
+        help="Run browser in headless mode (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    timeout: int = typer.Option(
+        300,
+        help="Timeout per step in seconds (automation modes).",
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    artifacts_dir: Optional[Path] = typer.Option(
+        None,
+        help="Directory for screenshots/traces (automation modes).",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        rich_help_panel=OPTION_GROUP_NAMES["automation"],
+    ),
+    ai_provider: Optional[str] = typer.Option(
+        None,
+        help="AI provider (e.g., 'ollama').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    ai_model: Optional[str] = typer.Option(
+        None,
+        help="AI model name (e.g., 'neural-chat').",
+        rich_help_panel=OPTION_GROUP_NAMES["ai"],
+    ),
+    header_map: Optional[Path] = typer.Option(
+        None,
+        "--header-map",
+        help="JSON file mapping desired Neurobagel headers to input variants.",
+        exists=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    extend_modalities: bool = typer.Option(
+        True,
+        "--extend-modalities/--neurobagel-modalities",
+        help="Use NeuroPoly custom modality mappings by default.",
+        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
+    ),
 ):
+    """
+    [bold]Convert Figshare article metadata to Neurobagel JSON-LD[/bold]
+
+    This command resolves a Figshare article or DOI, stages the content locally,
+    and converts the metadata into Neurobagel format using the same provider
+    workflow used by the other Bagel commands.
+
+    Access requirements:
+    * Public Figshare content usually works without credentials.
+    * Private, embargoed, or restricted content may require
+      [cyan]NP_FIGSHARE_TOKEN[/cyan].
+    * Large article bundles should prefer a persistent [cyan]--cache-dir[/cyan].
+    * See the provider guide and template.env for the full authentication setup.
+    """
     _provider_call(
         "figshare",
         article,
@@ -720,14 +1256,15 @@ def download(
     """
     [bold]Download imaging data from query results TSV[/bold]
 
-    This command reads a TSV file containing query results and automatically
-    selects the download protocol per dataset:
+    This command reads a TSV file containing query results obtained from Neurobagel Query
+    and automatically selects the download protocol per dataset:
 
     * [cyan]HTTP:[/cyan] If [bold]AccessLink[/bold] is present for the dataset, download from
       link(s) directly.
     * [cyan]Git:[/cyan] Otherwise, clone from [bold]RepositoryURL[/bold] with sparse checkout.
     * [cyan]Git-annex:[/cyan] If the repository exposes a [bold]git-annex[/bold] branch,
       run annex content retrieval after git checkout.
+    * [magenta]Other protocols and hosts to come[/magenta]
 
     Backend selection is automatic and can differ by dataset within the same TSV.
 
