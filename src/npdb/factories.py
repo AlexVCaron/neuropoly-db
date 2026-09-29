@@ -77,7 +77,7 @@ class ProviderManagerFactory:
 
     @staticmethod
     def create(
-        provider: str,
+        provider: str | ProviderName,
         *,
         cache_dir: str | Path | None = None,
         credentials_path: str | Path | None = None,
@@ -85,8 +85,12 @@ class ProviderManagerFactory:
         endpoint: str | None = None,
     ):
         try:
-            provider_name = ProviderName(provider.lower())
-        except ValueError as exc:
+            provider_name = (
+                provider
+                if isinstance(provider, ProviderName)
+                else ProviderName(str(provider).lower())
+            )
+        except (TypeError, ValueError) as exc:
             supported = ", ".join(item.value for item in ProviderName)
             raise ValueError(
                 f"Unsupported provider '{provider}'. Supported providers: {supported}."

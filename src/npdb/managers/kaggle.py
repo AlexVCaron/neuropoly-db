@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from npdb.managers.model import ProviderManager
+from npdb.managers.model import ProviderManager, ProviderName
 
 
 class KaggleProviderManager(ProviderManager):
-    provider_name = "kaggle"
+    provider_name: ProviderName = ProviderName.KAGGLE
     requires_cache = True
 
     def __init__(self, cache_dir: str | Path | None = None, **_: Any):
@@ -26,7 +26,9 @@ class KaggleProviderManager(ProviderManager):
         handle = identifier
         path = cache / "kaggle" / handle.replace("/", "__")
         path.mkdir(parents=True, exist_ok=True)
-        downloaded = kagglehub.dataset_download(handle=handle, path=str(cache / "kaggle"))
+        downloaded = kagglehub.dataset_download(
+            handle=handle, path=str(cache / "kaggle")
+        )
         target = Path(downloaded)
         if not target.exists():
             target = path

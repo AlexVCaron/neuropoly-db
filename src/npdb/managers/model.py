@@ -65,7 +65,7 @@ class Manager(ABC):
 
 
 class ProviderManager(Manager):
-    provider_name = "provider"
+    provider_name: ProviderName | None = None
     requires_cache = False
     access_type = "public"
 

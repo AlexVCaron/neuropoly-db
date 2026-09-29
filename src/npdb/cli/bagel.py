@@ -10,6 +10,7 @@ import typer
 from npdb.annotation.modes import AnnotationMode
 from npdb.cli.helpers import OPTION_GROUP_NAMES, help_option
 from npdb.factories import GiteaManagerFactory, ProviderManagerFactory
+from npdb.managers.model import ProviderName
 
 bagel = typer.Typer(
     help="Convert BIDS datasets to Neurobagel JSON-LD (from local folders or NeuroGitea).",
@@ -19,7 +20,7 @@ bagel = typer.Typer(
 
 
 def _provider_call(
-    provider: str,
+    provider: str | ProviderName,
     identifier: str,
     *,
     output: Path,
@@ -44,9 +45,14 @@ def _provider_call(
         token=kwargs.get("token"),
         endpoint=kwargs.get("endpoint"),
     )
+    provider_id = (
+        manager.provider_name.value
+        if isinstance(manager.provider_name, ProviderName)
+        else str(manager.provider_name)
+    )
 
     local_fetch = Path(output).parent / (
-        f"{provider}_{Path(identifier).name if hasattr(identifier, 'name') else identifier.replace('/', '_')}"
+        f"{provider_id}_{Path(identifier).name if hasattr(identifier, 'name') else identifier.replace('/', '_')}"
     )
     fetched = manager.fetch(identifier, local_fetch, **kwargs)
 

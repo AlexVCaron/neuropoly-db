@@ -4,13 +4,15 @@ import os
 from pathlib import Path
 from typing import Any
 
-from npdb.managers.model import ProviderManager
+from npdb.managers.model import ProviderManager, ProviderName
 
 
 class ZenodoProviderManager(ProviderManager):
-    provider_name = "zenodo"
+    provider_name: ProviderName = ProviderName.ZENODO
 
-    def __init__(self, token: str | None = None, cache_dir: str | Path | None = None, **_: Any):
+    def __init__(
+        self, token: str | None = None, cache_dir: str | Path | None = None, **_: Any
+    ):
         super().__init__(cache_dir=cache_dir)
         self.token = token or os.environ.get("NP_ZENODO_TOKEN")
 
