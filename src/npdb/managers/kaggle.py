@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from npdb.managers.model import ProviderManager, ProviderName
 
 
 class KaggleProviderManager(ProviderManager):
-    provider_name: ProviderName = ProviderName.KAGGLE
+    provider_name: ClassVar[ProviderName] = ProviderName.KAGGLE
     requires_cache = True
 
     def __init__(self, cache_dir: str | Path | None = None, **_: Any):

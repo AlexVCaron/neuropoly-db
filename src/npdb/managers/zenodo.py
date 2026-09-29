@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from npdb.managers.model import ProviderManager, ProviderName
 
 
 class ZenodoProviderManager(ProviderManager):
-    provider_name: ProviderName = ProviderName.ZENODO
+    provider_name: ClassVar[ProviderName] = ProviderName.ZENODO
 
     def __init__(
         self, token: str | None = None, cache_dir: str | Path | None = None, **_: Any

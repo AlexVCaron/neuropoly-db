@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from npdb.managers.model import GitManager, ProviderManager, ProviderName
 
 
 class GitProviderManager(GitManager, ProviderManager):
-    provider_name: ProviderName = ProviderName.GIT
+    provider_name: ClassVar[ProviderName] = ProviderName.GIT
 
     def __init__(
         self,
