@@ -21,8 +21,10 @@ from npdb.cli.helpers import (
     fetch_url,
     is_http_url,
     looks_like_non_git_repo_error,
+    prepare_provider_dataset,
     read_tsv,
     repo_has_git_annex,
+    unpack_provider_archives,
 )
 from npdb.factories import GiteaManagerFactory, ProviderManagerFactory
 from npdb.managers.model import ProviderName
@@ -295,11 +297,17 @@ def _provider_call(
         else str(manager.provider_name)
     )
 
-    local_fetch = (
-        Path(output).parent
-        / f"{provider_id}_{Path(identifier).name if hasattr(identifier, 'name') else identifier.replace('/', '_')}"
+    dataset_id = (
+        Path(identifier).name
+        if hasattr(identifier, "name")
+        else identifier.replace("/", "_")
     )
+    dataset_id = dataset_id.replace(".", "_")
+    local_fetch = Path(output) / f"{provider_id}_{dataset_id}"
+
     fetched = manager.fetch(identifier, local_fetch, **kwargs)
+    fetched = unpack_provider_archives(fetched)
+    fetched = prepare_provider_dataset(fetched)
 
     local2bagel(
         input_dir=fetched,

@@ -4,6 +4,28 @@ This repository exposes a provider-backed conversion flow under `npdb convert ba
 
 The shared conversion pipeline remains the same as the local and Gitea flows: each provider manager fetches the source dataset into a local directory, then calls the standard Neurobagel conversion step.
 
+Before conversion, provider downloads are checked for ZIP and TAR archives
+(including gzip, bzip2, and xz compressed TAR files). Each archive is extracted
+into the directory containing it and deleted only after successful extraction.
+Ordinary files are unchanged, and archives inside newly extracted content are
+not recursively unpacked. Unsafe archive paths, links, and extraction failures
+stop conversion; the failed archive is retained.
+
+After extraction, if no `derivatives` directory exists, non-hidden top-level
+directories other than `rawdata`, `sub-*`, `sourcedata`, `stimuli`, `code`,
+and `phenotype` directories are moved into a new
+`derivatives` directory. Existing derivatives layouts are left unchanged.
+The contents of `rawdata` are then moved to the dataset root and the empty
+directory is removed. Conflicting destination names stop preparation rather
+than overwriting existing data.
+
+If `participants.tsv` is missing, preparation generates it with
+`participant_id`, `age`, and `sex` columns, using unique BIDS `sub-<label>`
+entities from raw-data filenames and directories. Hidden paths, derivatives,
+`sourcedata`, `stimuli`, `code`, and `phenotype` are excluded from subject discovery.
+Age and sex are filled with `N/A`; existing tables are preserved.
+If no subject labels can be found, preparation fails explicitly.
+
 ## Shared cache rule
 
 Providers that download large archives or dataset bundles should use a local cache directory. The CLI enforces this when a provider is expected to fetch a large artifact or an archive-only record.
@@ -67,6 +89,15 @@ Download the `credentials.json` file from your MIDRC profile and point `NP_MIDRC
 - `NP_FIGSHARE_TOKEN`
 
 Figshare public records can be fetched without a token. Private or access-controlled content requires a token.
+
+The Figshare argument accepts an article ID, a bare DOI, or a `https://doi.org/`
+URL. Collection DOIs such as `10.6084/m9.figshare.c.7372564` are resolved through
+the collection's paginated article list, and files from every member article
+are downloaded. Files are staged in a shared directory; duplicate filenames
+within a fetch raise an error rather than silently overwriting another article's
+files. Re-running a fetch can replace files from a previous run.
+File downloads follow HTTP redirects, including Figshare's redirects to signed
+storage URLs. Errors from the final download endpoint are still reported.
 
 ### Mendeley
 
