@@ -2,8 +2,7 @@
 
 ## Query User Interface
 
-NeuroBagel exposes a user-friendly web interface to query and explore the datasets available in the node. Use the URL `http://localhost:9000` to access the interface (replace the port number with the value of `NB_QUERY_PORT_HOST` if you changed it in the `.env` file).
-
+NeuroBagel exposes a user-friendly web interface to query and explore the datasets available in the node. To access the NeuroPoly Neurobagel node, go to [https://data.neuro.polymtl.ca/bagel](https://data.neuro.polymtl.ca/bagel) (you need to be on-premises at the lab or behind the VPN).
 Once open, **click on `Submit Query`** to display the full list of available datasets.
 
 ![NeuroBagel query interface](../../../assets/neurobagel_query/neurobagel_query_all.png)
