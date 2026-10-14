@@ -76,8 +76,8 @@ All `npdb` commands are **interactive by default** and require user input to pro
 [This guide](./docs/npdb/download/guides/neurobagel_query.md) explains how to :
   
 - **query datasets** using the `NeuroBagel` web interface,
-- **save the query results** to file and interpret them,
-- **download the query results** from `NeuroGitea` using `npdb`
+- **save the selected datasets** to file and interpret them,
+- **download the data** from `NeuroGitea` using `npdb`
 
 [This guide](./docs/npdb/ingestion.md) explains how to :
 
