@@ -1,6 +1,6 @@
 # NeuroGitea account setup
 
-Follow the instructions below to configure your account on the [neurogitea website](https://data.neuro.polymtl.ca) (you need to activate the VPN if accessing from outside the Polytechnique network). **If you don't have an account yet, contact the [NeuroPoly IT support](https://github.com/orgs/neuropoly/teams/ansible-admins) to create one (via slack is the quickest).**
+Follow the instructions below to configure your account on NeuroGitea (you need to activate the VPN if accessing from outside the Polytechnique network). **If you don't have an account yet, contact the [NeuroPoly IT support](https://github.com/orgs/neuropoly/teams/ansible-admins) to create one (via slack is the quickest).**
 
 1. Log into [NeuroGitea](https://data.neuro.polymtl.ca) with your account.
 
