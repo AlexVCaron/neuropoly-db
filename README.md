@@ -41,8 +41,6 @@ All `npdb` commands are **interactive by default** and require user input to pro
 
 > [!IMPORTANT]
 > **To use the `download` functionalities, you'll need to query from the [NeuroPoly Neurobagel Node](https://data.neuro.polymtl.ca/bagel), accessible on-premises or via the VPN**.
->
-> Follow the steps in [this documentation](./docs/neurobagel/user_install.md) to install and furnish a local NeuroBagel node.
 
 0. If not done already, **clone or download this repository** to your local machine. Then, **open a terminal** and navigate to its root.
 
