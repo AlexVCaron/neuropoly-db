@@ -9,6 +9,8 @@ Once open, **click on `Submit Query`** to display the full list of available dat
 
 ### Refining the query results
 
+Select the `NeuroPoly` graph. You can select other graphs, however it will increase the query time.
+
 Use the **filters stacked on the left of the interface** to refine the query results using _age ranges_, _sex_, _diagnoses_, _imaging modalities_ and more. Once satisfied, **click on the `Submit Query`** button again.
 
 Datasets matching the selected filters will be displayed on the right, with the number of matching subjects they contain, as well as the list of available data modalities associated to their imaging sessions.
