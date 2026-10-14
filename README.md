@@ -55,13 +55,8 @@ All `npdb` commands are **interactive by default** and require user input to pro
    uv venv .venv
    ```
 
-   Answer `yes` if you see :
-
-   ```bash
-   A virtual environment already exists at .venv. Do you want to replace it?
+   Answer `yes` if you see : **`A virtual environment already exists at .venv. Do you want to replace it?`**
    ```
-
-   The above command _might fail if some virtual environment has already been configured in the provided directory (.venv)_. If you experience issues, **delete the content** under the virtual environment's directory and **re-run the command**.
 
 2. **Synchronize the virtual environment** with the CLI dependencies :
 
