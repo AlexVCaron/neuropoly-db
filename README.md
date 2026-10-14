@@ -36,6 +36,7 @@ All `npdb` commands are **interactive by default** and require user input to pro
 
 - Install [Python 3.12+](https://www.python.org/downloads/)
 - Install [uv](https://docs.astral.sh/uv/getting-started/installation/)
+- Install [git-annex](https://git-annex.branchable.com/install/)
 
 ### Installation
 
@@ -56,7 +57,6 @@ All `npdb` commands are **interactive by default** and require user input to pro
    ```
 
    Answer `yes` if you see : **`A virtual environment already exists at .venv. Do you want to replace it?`**
-   ```
 
 2. **Synchronize the virtual environment** with the CLI dependencies :
 
