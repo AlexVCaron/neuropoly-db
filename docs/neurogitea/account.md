@@ -15,7 +15,7 @@ Follow the instructions below to configure your account on NeuroGitea (you need 
 
 **On your computer (or the one you want to give access to NeuroGitea) :**
 
-0. First, verify if your machine is already registered with NeuroGitea. Activate the VPN if not already done, then run the following command in your terminal:
+0. First, verify if your machine is already registered with NeuroGitea:
 
    ```bash
    ssh git@data.neuro.polymtl.ca
