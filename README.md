@@ -44,6 +44,11 @@ All `npdb` commands are **interactive by default** and require user input to pro
 
 0. If not done already, **clone or download this repository** to your local machine. Then, **open a terminal** and navigate to its root.
 
+   ```bash
+   git clone https://github.com/neuropoly/neuropoly-db.git
+   cd neuropoly-db/
+   ``` 
+
 1. Create a **new virtual environment** locally to host the CLI dependencies and libraries :
 
    ```bash
