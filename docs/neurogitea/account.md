@@ -21,65 +21,60 @@ Follow the instructions below to configure your account on NeuroGitea (you need 
    ssh git@data.neuro.polymtl.ca
    ```
 
-   If successful, you'll see the following message :
+   **If you are registered, got to [Access token generation](#access-token-generation)
 
-   ```text
-   PTY allocation request failed
-   Hi there, "$USER"! You've successfully authenticated with the key named "$EMAIL", but Gitea does not provide shell access.
-   If this is unexpected, please log in with password and setup Gitea under another user.
-   Shared connection to data.neuro.polymtl.ca closed.
-   ```
+   **If you are asked to input a password, you are not registered. Follow these steps :**
 
-1. If not successful, verify if you already own a valid SSH key by running the following command in your terminal:
+   1. If not successful, verify if you already own a valid SSH key by running the following command in your terminal:
+   
+      ```bash
+      ls ~/.ssh/id_ed25519.pub
+      ```
+   
+      > **If you see a file path printed in the terminal, you already have a valid SSH key. You can go to step 3.**
 
-   ```bash
-   ls ~/.ssh/id_ed25519.pub
-   ```
-
-   > **If you see a file path printed in the terminal, you already have a valid SSH key. You can go to step 3.**
-
-2. **You don't have an ssh key.** Generate a new one using `ssh-keygen` :
-
-   ```bash
-   ssh-keygen -t ed25519
-   ```
-
-   > **Press `Enter` to accept the default file location and leave the passphrase empty.** The command will create 2 new files in your `~/.ssh` directory: `id_ed25519` (private key) and `id_ed25519.pub` (public key).
-
-**Back on the NeuroGitea website, in the settings page :**
-
-3. In the left sidebar of NeuroGitea, click on **SSH / GPG Keys**.
-
-   ![NeuroGitea SSH keys](../assets/neurogitea_token/neurogitea_ssh_keys.png)
-
-4. On the **right of `Manage SSH Keys`**, click on **Add Key**.
-
-   ![NeuroGitea add SSH key](../assets/neurogitea_token/neurogitea_add_ssh_key.png)
-
-5. Copy the **public key** (`id_ed25519.pub`, or the name you chose above) from your computer. **To do so, either navigate to `~/.ssh`, open the file with a text editor and copy its content, or copy the value from the terminal after running :**
-
-   ```bash
-   cat ~/.ssh/id_ed25519.pub
-   ```
-
-6. Go back to the NeuroGitea website. **Paste the copied key** in the **`content`** field. Then, click on **Add Key** to register your SSH key.
-
-   ![NeuroGitea add SSH key form](../assets/neurogitea_token/neurogitea_add_ssh_key_form.png)
-
-7. Validate that your connection to NeuroGitea is functional:
-
-   ```bash
-   ssh git@data.neuro.polymtl.ca
-   ```
-
-   If successful, you should be seeing this:
-
-   ```text
-   PTY allocation request failed
-   Hi there, "$USER"! You've successfully authenticated with the key named "$EMAIL", but Gitea does not provide shell access.
-   If this is unexpected, please log in with password and setup Gitea under another user.
-   Shared connection to data.neuro.polymtl.ca closed.
-   ```
+   2. **You don't have an ssh key.** Generate a new one using `ssh-keygen` :
+   
+      ```bash
+      ssh-keygen -t ed25519
+      ```
+   
+      > **Press `Enter` to accept the default file location and leave the passphrase empty.** The command will create 2 new files in your `~/.ssh` directory: `id_ed25519` (private key) and `id_ed25519.pub` (public key).
+   
+   **Back on the NeuroGitea website, in the settings page :**
+   
+   3. In the left sidebar of NeuroGitea, click on **SSH / GPG Keys**.
+   
+      ![NeuroGitea SSH keys](../assets/neurogitea_token/neurogitea_ssh_keys.png)
+   
+   4. On the **right of `Manage SSH Keys`**, click on **Add Key**.
+   
+      ![NeuroGitea add SSH key](../assets/neurogitea_token/neurogitea_add_ssh_key.png)
+   
+   5. Copy the **public key** (`id_ed25519.pub`, or the name you chose above) from your computer. **To do so, either navigate to `~/.ssh`, open the file with a text editor and copy its content, or copy the value from the terminal after running :**
+   
+      ```bash
+      cat ~/.ssh/id_ed25519.pub
+      ```
+   
+   6. Go back to the NeuroGitea website. **Paste the copied key** in the **`content`** field. Then, click on **Add Key** to register your SSH key.
+   
+      ![NeuroGitea add SSH key form](../assets/neurogitea_token/neurogitea_add_ssh_key_form.png)
+   
+   7. Validate that your connection to NeuroGitea is functional:
+   
+      ```bash
+      ssh git@data.neuro.polymtl.ca
+      ```
+   
+      If successful, you should be seeing this:
+   
+      ```text
+      PTY allocation request failed
+      Hi there, "$USER"! You've successfully authenticated with the key named "$EMAIL", but Gitea does not provide shell access.
+      If this is unexpected, please log in with password and setup Gitea under another user.
+      Shared connection to data.neuro.polymtl.ca closed.
+      ```
 
 ## Access token generation
 
