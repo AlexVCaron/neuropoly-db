@@ -64,7 +64,7 @@ All `npdb` commands are **interactive by default** and require user input to pro
    uv sync --active
    ```
 
-3. (Optional) If you intend on using the **assisted or automated modes** for BIDS standardization and conversion to NeuroBagel (see commands below), you need to **install additional dependencies**. Run the following commands to install them :
+3. (Recommended) If you intend on using the **assisted or automated modes** for BIDS standardization and conversion to NeuroBagel (see commands below), you need to **install additional dependencies**. Run the following commands to install them :
 
     ```bash
     uv sync --active --quiet --extra annotation-automation
