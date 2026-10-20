@@ -32,19 +32,19 @@ Neurobagel annotation policy, and conversion orchestration.
 
 ## Source inventory and disposition
 
-| Current source | Responsibility | Disposition |
-|---|---|---|
-| `src/npdb/bids_repair.py` | Repair planning, structural rules, filename associations, path references, safe application, journals and recovery | Move completely |
-| `src/npdb/external/bids.py` | Rust validator invocation, structured reports, strict validation, automatic repair/revalidation | Move completely; separate validator execution from workflow orchestration |
-| `prepare_provider_dataset` in `src/npdb/managers/preparation.py` | Layout normalization, subject discovery and missing participants-table generation | Extract into `bidsrepair`; retain provider orchestration in `npdb` |
-| Wrapped-root selection in `src/npdb/managers/mendeley.py` | Discovering a BIDS dataset inside downloaded content | Extract generic discovery; retain provider-specific exclusions and error context |
-| `src/npdb/annotation/standardize.py` | Mixed structural sidecar/table operations and mapping-based standardization | Split selectively; do not move wholesale |
-| `src/npdb/annotation/autofix.py` | Mixed generic table cleanup and Neurobagel annotation repair | Extract generic table operations only |
-| `src/npdb/annotation/preflight.py` | Bagel-supported suffix checks and phenotype/imaging ID comparison | Keep in `npdb` |
-| `src/npdb/managers/midrc_bids.py` | MIDRC clinical joins, acquisition interpretation and DICOM conversion | Keep in `npdb`, consuming shared BIDS helpers |
-| `extend_bids_description` in `src/npdb/cli/helpers.py` | Neurobagel repository/access metadata enrichment | Keep in `npdb` |
-| `BIDSStandardizer` in `src/npdb/managers/annotation.py` | Annotation configuration, mapping resolution and provenance orchestration | Keep in `npdb`, delegating structural operations |
-| Archive helpers in `src/npdb/managers/preparation.py` | Safe ZIP/TAR extraction and legacy ZIP offset repair | Keep in `npdb`; these are download infrastructure |
+| Current source                                                       | Responsibility                                                                                                     | Disposition                                                                      |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `src/npdb/bids_repair.py`                                          | Repair planning, structural rules, filename associations, path references, safe application, journals and recovery | Move completely                                                                  |
+| `src/npdb/external/bids.py`                                        | Rust validator invocation, structured reports, strict validation, automatic repair/revalidation                    | Move completely; separate validator execution from workflow orchestration        |
+| `prepare_provider_dataset` in `src/npdb/managers/preparation.py` | Layout normalization, subject discovery and missing participants-table generation                                  | Extract into `bidsrepair`; retain provider orchestration in `npdb`           |
+| Wrapped-root selection in `src/npdb/managers/mendeley.py`          | Discovering a BIDS dataset inside downloaded content                                                               | Extract generic discovery; retain provider-specific exclusions and error context |
+| `src/npdb/annotation/standardize.py`                               | Mixed structural sidecar/table operations and mapping-based standardization                                        | Split selectively; do not move wholesale                                         |
+| `src/npdb/annotation/autofix.py`                                   | Mixed generic table cleanup and Neurobagel annotation repair                                                       | Extract generic table operations only                                            |
+| `src/npdb/annotation/preflight.py`                                 | Bagel-supported suffix checks and phenotype/imaging ID comparison                                                  | Keep in `npdb`                                                                 |
+| `src/npdb/managers/midrc_bids.py`                                  | MIDRC clinical joins, acquisition interpretation and DICOM conversion                                              | Keep in `npdb`, consuming shared BIDS helpers                                  |
+| `extend_bids_description` in `src/npdb/cli/helpers.py`           | Neurobagel repository/access metadata enrichment                                                                   | Keep in `npdb`                                                                 |
+| `BIDSStandardizer` in `src/npdb/managers/annotation.py`          | Annotation configuration, mapping resolution and provenance orchestration                                          | Keep in `npdb`, delegating structural operations                               |
+| Archive helpers in `src/npdb/managers/preparation.py`              | Safe ZIP/TAR extraction and legacy ZIP offset repair                                                               | Keep in `npdb`; these are download infrastructure                              |
 
 ## Proposed layout
 
@@ -189,6 +189,7 @@ placeholders and unnecessary abstractions.
 - Provider option-forwarding tests pass.
 - The full suite passes with network access blocked.
 - No NeuroData interaction or modification of user datasets is required.
+
 
 ## Dependencies and rollout
 

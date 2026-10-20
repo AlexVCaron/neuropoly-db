@@ -2,11 +2,12 @@
 
 You do this **once**. It takes about 15 minutes.
 
-- [1. VPN and GitHub](#1-vpn-and-github)
-- [2. NeuroData account](#2-neurodata-account)
-- [3. Register your computer (SSH key)](#3-register-your-computer-ssh-key)
-- [4. Create a download token](#4-create-a-download-token)
-- [5. Save your credentials](#5-save-your-credentials)
+- [Get access](#get-access)
+  - [1. VPN and GitHub](#1-vpn-and-github)
+  - [2. NeuroData account](#2-neurodata-account)
+  - [3. Register your computer (SSH key)](#3-register-your-computer-ssh-key)
+  - [4. Create a download token](#4-create-a-download-token)
+  - [5. Save your credentials](#5-save-your-credentials)
 
 ## 1. VPN and GitHub
 
