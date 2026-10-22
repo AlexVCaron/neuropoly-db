@@ -10,10 +10,10 @@ Use the [normal installation](install.md). Then validate the `bids-repair` comma
 bids-repair --help
 ```
 
-Validation also requires the native `bids-validator-rust` executable on `PATH` or
-beside the Python interpreter. If absent, you can use the following utility script to install it:
+Source/editable installations require Rust 1.90+ with Cargo. From a checkout:
 
 ```Shell
+git submodule update --init --recursive -- tools/bids-validator-rust
 bash scripts/install_bids_validator.sh
 ```
 
@@ -41,22 +41,21 @@ The target version comes from:
 
 ### Target version and validation coverage
 
-BIDS schema selection uses, in order:
-
-1. An explicit `--schema` local JSON file or schema source directory.
-2. The bundled schema, if its BIDS version matches the target.
-3. A validated cached schema for that exact BIDS release.
-4. An automatic download of the [official compiled schema](https://bidsschematools.readthedocs.io/en/latest/description.html#schema-publication)
-   from `https://bids-specification.readthedocs.io/en/vVERSION/schema.json`.
-
-Schemas are cached at `${XDG_CACHE_HOME:-~/.cache}/bids-repair/schemas/VERSION/schema.json`.
-To provide a local schema, use `--schema`:
+The native beta supports **BIDS 1.11.1 only**. Incompatible requested targets fail
+before validation, schema downloads or repair. `--schema` accepts only a local
+JSON schema (or compiled source directory) structurally identical to the bundled
+schema; a different schema with the same version is not sufficient:
 
 ```bash
-bids-repair ./my-bids --bids-version 1.9.0 --schema /path/to/1.9.0/schema.json
+bids-repair ./my-bids --bids-version 1.11.1 --schema /path/to/schema-1.2.1.json
 ```
 
-The schema's embedded BIDS version must match the requested version.
+Historical/custom schemas cannot retarget the native engine, and are no longer
+downloaded automatically. `--bids-version latest` still performs a network lookup
+and fails if the resulting version is unsupported.
+
+See [offline wheel installation](install.md#offline-installation) to pre-stage
+all Python dependencies as well as npdb.
 
 ### Repair controls and safety
 
