@@ -267,10 +267,9 @@ def ingest_patches(stack: ExitStack):
 
 
 def has_validator():
-    return bool(
-        shutil.which("bids-validator-rust")
-        or Path(sys.executable).with_name("bids-validator-rust").exists()
-    )
+    from bids_repair.native import validator_status
+
+    return not validator_status().startswith("unavailable")
 
 
 def assert_ingestable(result, output: Path):
@@ -290,7 +289,7 @@ def assert_explained(result, *fragments):
         assert fragment in result.output, result.output
 
 
-@pytest.mark.skipif(not has_validator(), reason="bids-validator-rust not installed")
+@pytest.mark.skipif(not has_validator(), reason="pinned Rust validator unavailable")
 @pytest.mark.parametrize("layout", LAYOUTS)
 @pytest.mark.parametrize("provider", PROVIDERS, ids=IDS)
 def test_delivered_dataset_is_ingestable(provider, layout, tmp_path):
@@ -307,7 +306,7 @@ def test_delivered_dataset_is_ingestable(provider, layout, tmp_path):
     assert_ingestable(result, tmp_path / "out")
 
 
-@pytest.mark.skipif(not has_validator(), reason="bids-validator-rust not installed")
+@pytest.mark.skipif(not has_validator(), reason="pinned Rust validator unavailable")
 def test_neurodata_dataset_is_ingestable(tmp_path):
     def clone_repository(dataset, local_path, light=False):
         with zipfile.ZipFile(io.BytesIO(bids_archive())) as archive:

@@ -54,7 +54,7 @@ _EXTRA_MODULES = {
     "zenodo": "zenodo_get",
     "annotation-automation": "playwright",
 }
-_TOOLS = ("git", "git-annex", "dcm2niix", "bids-validator-rust")
+_TOOLS = ("git", "git-annex", "dcm2niix")
 
 _GIT_HINTS = [
     (
@@ -140,6 +140,7 @@ def _status_code(exc: BaseException) -> int | None:
 
 def _diagnose_one(exc: BaseException) -> Diagnosis | None:
     from bids_repair import BidsRepairError, BidsValidationError
+    from bids_repair.native import NativeValidatorError
     from npdb.annotation.preflight import PreflightError
     from npdb.external.neurobagel.errors import BagelCLIError, classify_bagel_error
 
@@ -157,6 +158,14 @@ def _diagnose_one(exc: BaseException) -> Diagnosis | None:
         )
     if isinstance(exc, NpdbError):
         return Diagnosis(exc.title, exc.message, exc.hint, exc.docs, exc.exit_code)
+
+    if isinstance(exc, NativeValidatorError):
+        return Diagnosis(
+            "Native BIDS validator unavailable",
+            str(exc),
+            hint="Reinstall a matching npdb wheel, or build the pinned validator for source development.",
+            docs="Development-Environment-Setup#native-tools",
+        )
 
     if isinstance(exc, BidsValidationError):
         return Diagnosis(
@@ -304,6 +313,8 @@ def _environment() -> list[tuple[str, str]]:
     import importlib.util
     import shutil
 
+    from bids_repair.native import validator_status
+
     try:
         dist = metadata.distribution("npdb")
         version = dist.version
@@ -323,6 +334,7 @@ def _environment() -> list[tuple[str, str]]:
     tools = ", ".join(
         f"{tool} {'yes' if shutil.which(tool) else 'no'}" for tool in _TOOLS
     )
+    tools += f", bids-validator {validator_status()}"
     return [
         ("npdb", version),
         ("Python", platform.python_version()),

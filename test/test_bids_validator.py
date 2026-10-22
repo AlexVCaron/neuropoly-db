@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import subprocess
@@ -6,95 +7,266 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from npdb.external.bids import validate_bids_dataset
+from bids_repair import native
+from bids_repair.validation import get_bids_validation_report, validate_bids_dataset
 
 
-def test_uses_only_the_rust_validator(tmp_path):
-    report = {"datasets": [{"errors": 0, "warnings": 1}]}
+def upstream_report(*issues):
+    return {
+        "issues": {
+            "issues": list(issues),
+            "codeMessages": {issue["code"]: "Explanation" for issue in issues},
+        }
+    }
+
+
+def test_uses_pinned_rust_json_interface(tmp_path):
+    document = upstream_report(
+        {
+            "code": "NO_AUTHORS",
+            "severity": "warning",
+            "location": "/dataset_description.json",
+        }
+    )
     with (
         patch(
-            "npdb.external.bids.shutil.which", return_value="/tools/bids-validator-rust"
-        ) as which,
+            "bids_repair.validation._validator_executable",
+            return_value="/tools/bids-validator",
+        ),
         patch(
-            "npdb.external.bids.subprocess.run",
-            return_value=Mock(returncode=0, stdout=json.dumps(report)),
+            "bids_repair.validation.subprocess.run",
+            return_value=Mock(returncode=0, stdout=json.dumps(document), stderr=""),
         ) as run,
     ):
-        assert validate_bids_dataset(tmp_path) == report
-    which.assert_called_once_with("bids-validator-rust")
+        report = validate_bids_dataset(tmp_path)
+    assert report["datasets"][0]["warnings"] == 1
+    assert report["datasets"][0]["issues"][0]["path"] == str(
+        tmp_path / "dataset_description.json"
+    )
     run.assert_called_once_with(
-        ["/tools/bids-validator-rust", str(tmp_path.resolve())],
+        [
+            "/tools/bids-validator",
+            str(tmp_path),
+            "--format",
+            "json",
+            "--content-mode",
+            "parity",
+            "--link-mode",
+            "parity",
+        ],
         capture_output=True,
         text=True,
         check=False,
     )
 
 
-def test_missing_rust_validator_does_not_fall_back(tmp_path):
+def test_keeps_immediate_derivative_boundary_and_missing_metadata(tmp_path):
+    child = tmp_path / "derivatives" / "pipeline"
+    child.mkdir(parents=True)
+    (child / "derivatives" / "nested").mkdir(parents=True)
     with (
-        patch("npdb.external.bids.shutil.which", return_value=None),
-        patch("npdb.external.bids.sys.executable", str(tmp_path / "python")),
-        patch("npdb.external.bids.subprocess.run") as run,
-        pytest.raises(RuntimeError, match="install_bids_validator.sh"),
+        patch("bids_repair.validation._validator_executable", return_value="validator"),
+        patch(
+            "bids_repair.validation.subprocess.run",
+            return_value=Mock(
+                returncode=0, stdout=json.dumps(upstream_report()), stderr=""
+            ),
+        ) as run,
     ):
-        validate_bids_dataset(tmp_path)
+        report = get_bids_validation_report(tmp_path)
+    assert [item["dataset"] for item in report["datasets"]] == [
+        str(tmp_path),
+        str(child),
+    ]
+    assert any(
+        issue["code"] == "DERIVATIVE_PROVENANCE"
+        for issue in report["datasets"][1]["issues"]
+    )
+    assert run.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "code, document",
+    [
+        (1, upstream_report()),
+        (2, upstream_report()),
+        (0, {"datasets": []}),
+        (0, {"issues": {"issues": [], "codeMessages": []}}),
+        (0, upstream_report({"code": "BAD", "severity": "info"})),
+        (
+            1,
+            upstream_report(
+                {"code": "BAD", "severity": "error", "location": "/../outside"}
+            ),
+        ),
+        (0, upstream_report({"code": "BAD", "severity": "error"})),
+    ],
+)
+def test_rejects_failed_or_invalid_validator_results(tmp_path, code, document):
+    with (
+        patch("bids_repair.validation._validator_executable", return_value="validator"),
+        patch(
+            "bids_repair.validation.subprocess.run",
+            return_value=Mock(
+                returncode=code, stdout=json.dumps(document), stderr="error"
+            ),
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        get_bids_validation_report(tmp_path)
+
+
+def test_invalid_json_is_explicit(tmp_path):
+    with (
+        patch("bids_repair.validation._validator_executable", return_value="validator"),
+        patch(
+            "bids_repair.validation.subprocess.run",
+            return_value=Mock(returncode=1, stdout="not json", stderr="failure"),
+        ),
+        pytest.raises(RuntimeError, match="structured report"),
+    ):
+        get_bids_validation_report(tmp_path)
+
+
+def test_error_findings_are_available_without_becoming_success(tmp_path):
+    document = upstream_report({"code": "UNKNOWN_ERROR", "severity": "error"})
+    with (
+        patch("bids_repair.validation._validator_executable", return_value="validator"),
+        patch(
+            "bids_repair.validation.subprocess.run",
+            return_value=Mock(returncode=1, stdout=json.dumps(document), stderr=""),
+        ),
+    ):
+        assert get_bids_validation_report(tmp_path)["datasets"][0]["errors"] == 1
+        with pytest.raises(RuntimeError, match="validation failed"):
+            validate_bids_dataset(tmp_path)
+
+
+def test_native_header_checks_are_not_silently_disabled(tmp_path):
+    import nibabel as nib
+    import numpy as np
+
+    (tmp_path / "dataset_description.json").write_text(
+        json.dumps(
+            {
+                "Name": "Header fixture",
+                "BIDSVersion": "1.11.1",
+                "Authors": ["Author"],
+            }
+        )
+    )
+    image = tmp_path / "sub-01" / "anat" / "sub-01_T1w.nii.gz"
+    image.parent.mkdir(parents=True)
+    nib.save(
+        nib.Nifti1Image(np.zeros((2, 2, 2, 2), dtype=np.float32), np.eye(4)),
+        image,
+    )
+    report = get_bids_validation_report(tmp_path)
+    assert any(
+        issue["code"] == "T1W_FILE_WITH_TOO_MANY_DIMENSIONS"
+        for issue in report["datasets"][0]["issues"]
+    )
+
+
+@pytest.fixture
+def bundle(tmp_path, monkeypatch):
+    directory = tmp_path / "bundle"
+    directory.mkdir()
+    name = "bids-validator.exe" if os.name == "nt" else "bids-validator"
+    binary = directory / name
+    binary.write_bytes(b"executable fixture")
+    binary.chmod(0o755)
+    schema = directory / "schema.json"
+    schema.write_text('{"bids_version":"1.11.1","schema_version":"1.2.1"}')
+    provenance = {
+        "source_commit": native.SOURCE_COMMIT,
+        "rust_package_version": native.RUST_VERSION,
+        "upstream_version": native.REFERENCE_VERSION,
+        "sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+        "schema_sha256": hashlib.sha256(schema.read_bytes()).hexdigest(),
+    }
+    (directory / "provenance.json").write_text(json.dumps(provenance))
+    monkeypatch.setattr(native, "PACKAGE_BIN", directory)
+    return binary
+
+
+def test_bundle_wins_without_path_lookup_or_subprocess(bundle):
+    with (
+        patch("bids_repair.native.shutil.which") as which,
+        patch("bids_repair.native.subprocess.run") as run,
+    ):
+        assert native.validator_executable() == str(bundle)
+    which.assert_not_called()
     run.assert_not_called()
 
 
-def test_finds_rust_validator_beside_interpreter(tmp_path):
-    executable = tmp_path / "bids-validator-rust"
-    executable.write_text("binary fixture")
-    executable.chmod(0o755)
-    report = {"datasets": [{"errors": 0}]}
+@pytest.mark.parametrize("damage", ["delete", "checksum", "provenance", "schema"])
+def test_damaged_bundle_never_falls_back(bundle, damage):
+    if damage == "delete":
+        bundle.unlink()
+    elif damage == "checksum":
+        bundle.write_bytes(b"corrupt")
+    elif damage == "schema":
+        (bundle.parent / "schema.json").write_text("{}")
+    else:
+        (bundle.parent / "provenance.json").write_text("{}")
     with (
-        patch("npdb.external.bids.shutil.which", return_value=None),
-        patch("npdb.external.bids.sys.executable", str(tmp_path / "python")),
+        patch("bids_repair.native.shutil.which") as which,
+        pytest.raises(RuntimeError, match="damaged"),
+    ):
+        native.validator_executable()
+    which.assert_not_called()
+
+
+def test_missing_release_bundle_does_not_use_external(tmp_path, monkeypatch):
+    monkeypatch.setattr(native, "PACKAGE_BIN", tmp_path / "missing")
+    monkeypatch.setattr(native, "source_root", lambda: None)
+    with (
+        patch("bids_repair.native.shutil.which") as which,
+        pytest.raises(RuntimeError, match="reinstall"),
+    ):
+        native.validator_executable()
+    which.assert_not_called()
+
+
+def test_development_external_identity_is_verified(tmp_path, monkeypatch):
+    executable = tmp_path / "bids-validator"
+    executable.write_bytes(b"fixture")
+    executable.chmod(0o755)
+    monkeypatch.setattr(native, "PACKAGE_BIN", tmp_path / "missing")
+    monkeypatch.setattr(native, "source_root", lambda: tmp_path)
+    expected = (
+        f"bids-validator {native.REFERENCE_VERSION} commit {native.REFERENCE_COMMIT[:7]} "
+        f"rust {native.RUST_VERSION}\nrust git commit {native.SOURCE_COMMIT}\n"
+    )
+    with (
+        patch("bids_repair.native.shutil.which", return_value=str(executable)),
         patch(
-            "npdb.external.bids.subprocess.run",
-            return_value=Mock(returncode=0, stdout=json.dumps(report)),
+            "bids_repair.native.subprocess.run",
+            return_value=Mock(returncode=0, stdout=expected, stderr=""),
         ) as run,
     ):
-        assert validate_bids_dataset(tmp_path) == report
-    assert run.call_args.args[0][0] == str(executable)
+        assert native.validator_executable() == str(executable)
+        run.return_value.stdout = "bids-validator from Deno"
+        with pytest.raises(RuntimeError, match="Unexpected validator identity"):
+            native.validator_executable()
 
 
-def test_installer_reuses_existing_rust_binary_without_cargo(tmp_path):
-    source = tmp_path / "bin"
-    source.mkdir()
-    executable = source / "bids-validator-rust"
-    executable.write_text(
-        "#!/bin/sh\nprintf '%s\\n' 'bids-validator-rust 0.0.3 (bids-validate 0.0.3)'\n"
-    )
-    executable.chmod(0o755)
-    prefix = tmp_path / "environment"
-    installer = (
-        Path(__file__).resolve().parents[1] / "scripts/install_bids_validator.sh"
-    )
-    result = subprocess.run(
-        ["bash", str(installer), str(prefix)],
-        env={**os.environ, "PATH": f"{source}:/usr/bin:/bin"},
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert "already installed" in result.stdout
-    assert (prefix / "bin/bids-validator-rust").read_bytes() == executable.read_bytes()
-    assert os.access(prefix / "bin/bids-validator-rust", os.X_OK)
-
-
-def test_workspace_image_includes_only_native_validation_tools():
+def test_workspace_image_builds_pinned_upstream():
     root = Path(__file__).resolve().parents[1]
     dockerfile = (root / ".devcontainer/Dockerfile").read_text()
     assert "FROM rust:1.90.0-bookworm AS validator" in dockerfile
-    assert "cargo install --locked" in dockerfile
-    assert "apt-get install -y --no-install-recommends dcm2niix" in dockerfile
-    assert "bids-validator-rust /usr/local/bin/bids-validator-rust" in dockerfile
-    assert "npm" not in dockerfile
-    assert "deno" not in dockerfile
-    ignored = (root / ".devcontainer/Dockerfile.dockerignore").read_text().splitlines()
-    assert ignored[0] == "**"
-    assert "!tools/bids-validator-rust/Cargo.lock" in ignored
-    assert not any(line.startswith("!tmp") for line in ignored)
+    assert "tools/build_validator.py --output /build/validator" in dockerfile
+    assert "tools/bids-validator-source.json" in dockerfile
+    assert (
+        json.loads((root / "tools/bids-validator-source.json").read_text())[
+            "source_commit"
+        ]
+        == native.SOURCE_COMMIT
+    )
+    assert "/usr/local/share/doc/bids-validator/" in dockerfile
+    assert "/usr/local/bin/bids-validator" in dockerfile
+    assert "npm" not in dockerfile and "deno" not in dockerfile
 
 
 def test_neurobagel_validation_gate_uses_rust_instead_of_pybids(tmp_path):
@@ -123,26 +295,3 @@ def test_neurobagel_validation_gate_uses_rust_instead_of_pybids(tmp_path):
         assert bagel_cli.BIDSLayout is original_layout
     validation.assert_called_once_with(str(tmp_path), severity_threshold="warning")
     original_layout.assert_not_called()
-
-
-@pytest.mark.parametrize(
-    "code, stdout",
-    [
-        (1, "validation failed"),
-        (0, "not json"),
-        (0, '{"datasets": [{"errors": 1}]}'),
-        (0, '{"datasets": []}'),
-    ],
-)
-def test_rejects_failed_or_invalid_validator_results(tmp_path, code, stdout):
-    with (
-        patch(
-            "npdb.external.bids.shutil.which", return_value="/tools/bids-validator-rust"
-        ),
-        patch(
-            "npdb.external.bids.subprocess.run",
-            return_value=Mock(returncode=code, stdout=stdout, stderr="error"),
-        ),
-        pytest.raises(RuntimeError),
-    ):
-        validate_bids_dataset(tmp_path)

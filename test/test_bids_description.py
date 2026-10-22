@@ -9,7 +9,11 @@ from typer.testing import CliRunner as NpdbRunner
 
 from bids_repair.bids_version import LATEST_RELEASE_URL, resolve_bids_version
 from bids_repair.cli import app
-from bids_repair.repair import inspect_dataset_description, plan_bids_repair
+from bids_repair.repair import (
+    inspect_dataset_description,
+    issue_repair_kind,
+    plan_bids_repair,
+)
 from bids_repair.validation import (
     get_bids_validation_report,
     validate_and_repair_bids_dataset,
@@ -141,7 +145,7 @@ def test_latest_real_validator_apply_records_concrete_version(tmp_path):
     )
     initial = report["repair"]["original_report"]["datasets"][0]["issues"]
     description_issue = next(
-        issue for issue in initial if issue["code"] == "INVALID_DATASET_DESCRIPTION"
+        issue for issue in initial if issue_repair_kind(issue) == "description"
     )
     assert description_issue["diagnostics"]["json_valid"]
     assert "BIDSVersion is missing" in description_issue["message"]
@@ -263,7 +267,7 @@ def test_valid_json_description_errors_explain_fields(tmp_path, description, pro
     issue = next(
         item
         for item in report["datasets"][0]["issues"]
-        if item["code"] == "INVALID_DATASET_DESCRIPTION"
+        if issue_repair_kind(item) == "description"
     )
     assert issue["diagnostics"]["json_valid"]
     assert problem in issue["message"]
@@ -276,7 +280,7 @@ def test_malformed_json_includes_parse_location(tmp_path):
     issue = next(
         item
         for item in report["datasets"][0]["issues"]
-        if item["code"] == "INVALID_DATASET_DESCRIPTION"
+        if issue_repair_kind(item) == "description"
     )
     assert issue["diagnostics"]["json_valid"] is False
     assert "line 3, column 1" in issue["message"]
@@ -302,11 +306,9 @@ def test_valid_basic_fields_do_not_silently_override_validator_error(tmp_path):
             }
         ]
     }
-    from subprocess import CompletedProcess
-
     with patch(
-        "npdb.external.bids.subprocess.run",
-        return_value=CompletedProcess([], 1, json.dumps(report), ""),
+        "npdb.external.bids._native_dataset_report",
+        return_value=report["datasets"][0],
     ):
         inspected = get_bids_validation_report(root)
     assert inspected["datasets"][0]["errors"] == 1

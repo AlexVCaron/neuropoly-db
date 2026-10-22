@@ -137,10 +137,11 @@ def _plan_from_report(
     owner_roots: dict[str, str] = {}
     rename_source_findings: dict[str, list[dict[str, Any]]] = {}
     blocked_rename_sources: set[str] = set()
+    description_operations: set[str] = set()
     issue_records = list(_iter_issues(report))
 
     for issue, owner in issue_records:
-        finding = _normalise_finding(issue)
+        finding = _normalise_finding(issue, owner)
         findings.append(finding)
         owner = Path(os.path.abspath(owner))
         if not _is_within(root, owner):
@@ -153,12 +154,14 @@ def _plan_from_report(
                 "The validator-reported dataset path contains a symlink."
             )
             continue
-        if finding["code"] == "INVALID_DATASET_DESCRIPTION":
+        if issue_repair_kind(finding, owner) == "description":
             finding["diagnostics"] = inspect_dataset_description(owner)
             operation, explanation = _description_repair(owner, bids_version)
             if operation:
                 operation["original_finding"] = dict(issue)
-                operations.append(operation)
+                if operation["id"] not in description_operations:
+                    operations.append(operation)
+                    description_operations.add(operation["id"])
                 finding.update(
                     action="normalize_dataset_description",
                     resolution="planned",
@@ -212,7 +215,7 @@ def _plan_from_report(
                         resolution="The invalid field requires user correction.",
                     )
                 )
-        elif finding["code"] == "INVALID_FILENAME":
+        elif issue_repair_kind(finding) == "filename":
             source = _issue_file_path(owner, finding.get("path"))
             target, reason = (
                 _normalized_filename(source, owner, suffix_aliases)
@@ -280,7 +283,7 @@ def _plan_from_report(
                 target,
                 expected_sha256=source_hash,
                 affected_paths=[str(source), str(target)],
-                evidence="Validator reported INVALID_FILENAME; entity values came only from filename syntax or enclosing sub-/ses- directories.",
+                evidence="Validator reported a filename issue; entity values came only from filename syntax or enclosing sub-/ses- directories.",
                 diagnostic={
                     "code": "REPAIRED_FILENAME",
                     "severity": "info",
@@ -607,7 +610,37 @@ def _validate_aliases(aliases: dict[str, str]) -> dict[str, str]:
     return result
 
 
-def _normalise_finding(issue: dict[str, Any]) -> dict[str, Any]:
+def issue_repair_kind(issue: dict[str, Any], owner: Path | None = None) -> str | None:
+    code = issue.get("code")
+    if code == "INVALID_DATASET_DESCRIPTION" or (
+        Path(str(issue.get("path", ""))).name == "dataset_description.json"
+        and (
+            owner is None
+            or Path(str(issue.get("path", ""))) == owner / "dataset_description.json"
+        )
+        and code
+        in {
+            "JSON_INVALID",
+            "JSON_NOT_AN_OBJECT",
+            "JSON_SCHEMA_VALIDATION_ERROR",
+            "JSON_KEY_REQUIRED",
+            "MISSING_DATASET_DESCRIPTION",
+        }
+    ):
+        return "description"
+    if code in {
+        "INVALID_FILENAME",
+        "FILENAME_MISMATCH",
+        "ENTITY_WITH_NO_LABEL",
+        "ALL_FILENAME_RULES_HAVE_ISSUES",
+    }:
+        return "filename"
+    return None
+
+
+def _normalise_finding(
+    issue: dict[str, Any], owner: Path | None = None
+) -> dict[str, Any]:
     code = str(issue.get("code", "UNKNOWN_VALIDATOR_ISSUE"))
     severity = str(issue.get("severity", "info")).lower()
     if severity not in {"error", "warning", "info"}:
@@ -620,7 +653,7 @@ def _normalise_finding(issue: dict[str, Any]) -> dict[str, Any]:
     }
     if issue.get("path") is not None:
         finding["path"] = str(issue["path"])
-    if code not in {"INVALID_DATASET_DESCRIPTION", "INVALID_FILENAME"}:
+    if issue_repair_kind(finding, owner) is None:
         finding["resolution"] = (
             "No automatic repair rule supports this validator issue."
         )
