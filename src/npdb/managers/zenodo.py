@@ -40,6 +40,7 @@ class ZenodoProviderManager(ProviderManager):
             output_path.resolve()
         ) or output_path.resolve().is_relative_to(download_dir.resolve()):
             raise ValueError("Zenodo cache and fetched directory must not overlap.")
+
         output_path.mkdir(parents=True, exist_ok=True)
         download_dir.mkdir(parents=True, exist_ok=True)
 
@@ -62,6 +63,7 @@ class ZenodoProviderManager(ProviderManager):
             zenodo_get.download(output_dir=manifest_dir, md5=True, **options)
             manifest = Path(manifest_dir) / "md5sums.txt"
             lines = manifest.read_text().splitlines() if manifest.is_file() else []
+
         files = []
         for line in filter(None, lines):
             checksum, _, name = line.partition("  ")
@@ -90,6 +92,7 @@ class ZenodoProviderManager(ProviderManager):
         self._check_destination(target)
         if self._md5(source) != checksum:
             raise ValueError(f"Zenodo cached file failed MD5 check: {source}.")
+
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
             dir=target.parent, prefix=f".{target.name}.", suffix=".part", delete=False
@@ -107,6 +110,7 @@ class ZenodoProviderManager(ProviderManager):
     def _md5(path: Path) -> str | None:
         if not path.is_file():
             return None
+
         digest = hashlib.md5(usedforsecurity=False)
         with path.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):

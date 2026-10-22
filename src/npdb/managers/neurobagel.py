@@ -4,7 +4,7 @@ from unittest.mock import patch
 from bagel.cli import bagel
 from typer.testing import CliRunner
 
-from npdb.external.bids import BidsSeverity, validate_and_repair_bids_dataset
+from bids_repair.validation import BidsSeverity, validate_and_repair_bids_dataset
 from npdb.external.neurobagel.errors import BagelCLIError
 from npdb.managers.model import BagelDB
 
@@ -30,6 +30,7 @@ class BagelMixin:
         )
         repair_details = report.get("repair", {})
         report = repair_details.get("final_report", report)
+
         with patch("bagel.cli.BIDSLayout", return_value=report):
             self._run_bagel_cli(
                 "bids2tsv",

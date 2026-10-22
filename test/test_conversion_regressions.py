@@ -104,7 +104,9 @@ def test_generated_annotations_and_tsv_produce_real_bagel_jsonld(
         manager.bagel_bids("synthetic", str(bids_table))
     graph = json.loads((output / "synthetic.jsonld").read_text())
     assert [sample["hasLabel"] for sample in graph["hasSamples"]] == [
-        "sub-01", "sub-02", "sub-03",
+        "sub-01",
+        "sub-02",
+        "sub-03",
     ]
     assert all(len(sample["hasSession"]) == 2 for sample in graph["hasSamples"])
     sessions = [
@@ -113,7 +115,9 @@ def test_generated_annotations_and_tsv_produce_real_bagel_jsonld(
     ]
     assert [session["hasAge"] for session in sessions] == [24.0, 30.0, 28.0]
     assert [session["hasSex"]["identifier"] for session in sessions] == [
-        "ncit:C16576", "ncit:C16576", "ncit:C20197",
+        "ncit:C16576",
+        "ncit:C16576",
+        "ncit:C20197",
     ]
     assert pheno_utils.categorical_cols_have_bids_levels(
         json.loads(annotations.read_text())
@@ -147,7 +151,9 @@ def test_existing_semantic_levels_backfill_bids_levels_idempotently(
     assert fix_missing_levels(tsv, annotations)
     data = json.loads(annotations.read_text())
     assert data["sex"]["Levels"] == {
-        "F": "Female", "M": "Male", **(existing_levels or {}),
+        "F": "Female",
+        "M": "Male",
+        **(existing_levels or {}),
     }
     assert data["sex"]["Annotations"]["Levels"] == semantic
     original = annotations.read_bytes()
@@ -159,11 +165,19 @@ def test_all_missing_categorical_values_get_empty_bids_levels(tmp_path):
     tsv = tmp_path / "participants.tsv"
     tsv.write_text("sex\nn/a\n")
     annotations = tmp_path / "annotations.json"
-    annotations.write_text(json.dumps({
-        "sex": {"Annotations": {
-            "VariableType": "Categorical", "Levels": {}, "MissingValues": ["n/a"],
-        }},
-    }))
+    annotations.write_text(
+        json.dumps(
+            {
+                "sex": {
+                    "Annotations": {
+                        "VariableType": "Categorical",
+                        "Levels": {},
+                        "MissingValues": ["n/a"],
+                    }
+                },
+            }
+        )
+    )
     assert fix_missing_levels(tsv, annotations)
     assert json.loads(annotations.read_text())["sex"]["Levels"] == {}
     assert fix_missing_levels(tsv, annotations) == []
@@ -192,7 +206,9 @@ def test_bagel_python_exception_is_reported_and_chained(tmp_path):
     underlying = TypeError('can only concatenate str (not "int") to str')
     manager.cli = Mock()
     manager.cli.invoke.return_value = SimpleNamespace(
-        exit_code=1, output="Warning before failure", exception=underlying,
+        exit_code=1,
+        output="Warning before failure",
+        exception=underlying,
     )
     with pytest.raises(BagelCLIError) as caught:
         manager._run_bagel_cli("pheno")
@@ -206,7 +222,9 @@ def test_bagel_normal_exit_preserves_existing_output(tmp_path):
     manager = BagelNeuroPolyMTL(str(tmp_path))
     manager.cli = Mock()
     manager.cli.invoke.return_value = SimpleNamespace(
-        exit_code=1, output="Invalid input", exception=SystemExit(1),
+        exit_code=1,
+        output="Invalid input",
+        exception=SystemExit(1),
     )
     with pytest.raises(BagelCLIError) as caught:
         manager._run_bagel_cli("pheno")

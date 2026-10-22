@@ -114,8 +114,10 @@ def test_description_plan_keeps_authors_fix_and_reports_missing_version(tmp_path
             "path": "dataset_description.json",
         },
     )
+
     with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
         plan = plan_bids_repair(root)
+
     assert len(plan["operations"]) == 1
     assert plan["blocking"] is True
     assert any(item["code"] == "BIDS_VERSION_REQUIRED" for item in plan["findings"])
@@ -134,14 +136,21 @@ def test_description_plan_distinguishes_malformed_json_and_schema_type(tmp_path)
         },
     )
     description.write_text("{", encoding="utf-8")
+
     with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
         malformed = plan_bids_repair(root)
-    assert any(item["code"] == "INVALID_DATASET_DESCRIPTION_JSON" for item in malformed["findings"])
+
+    assert any(
+        item["code"] == "INVALID_DATASET_DESCRIPTION_JSON"
+        for item in malformed["findings"]
+    )
     assert malformed["operations"] == []
 
     description.write_text('{"Name":"Example","Authors":4}', encoding="utf-8")
+
     with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
         wrong_type = plan_bids_repair(root)
+
     assert any(
         item["code"] == "INVALID_DATASET_DESCRIPTION_SCHEMA"
         for item in wrong_type["findings"]
@@ -162,8 +171,10 @@ def test_explicit_version_is_applied_without_overwriting_unsupported_authors(tmp
             "path": "dataset_description.json",
         },
     )
+
     with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
         plan = plan_bids_repair(root, bids_version="1.9.0")
+
     updated = json.loads(plan["operations"][0]["content"])
     assert updated["BIDSVersion"] == "1.9.0"
     assert updated["Authors"] == 4
@@ -208,7 +219,10 @@ def test_ambiguous_tokens_and_conflicting_directory_entities_stay_unresolved(tmp
         plan = plan_bids_repair(root)
     assert plan["operations"] == []
     assert any("conflicts" in item.get("resolution", "") for item in plan["findings"])
-    assert any("Unrecognized filename token" in item.get("resolution", "") for item in plan["findings"])
+    assert any(
+        "Unrecognized filename token" in item.get("resolution", "")
+        for item in plan["findings"]
+    )
     assert plan["blocking"] is True
 
 
@@ -217,7 +231,9 @@ def test_explicit_suffix_alias_is_applied_and_alias_chains_are_rejected(tmp_path
     path = root / "sub-01" / "func" / "sub-01_task-rest_oldbold.nii.gz"
     path.parent.mkdir(parents=True)
     path.write_bytes(b"x")
-    report = _report(root, _filename_issue("sub-01/func/sub-01_task-rest_oldbold.nii.gz"))
+    report = _report(
+        root, _filename_issue("sub-01/func/sub-01_task-rest_oldbold.nii.gz")
+    )
     with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
         plan = plan_bids_repair(root, suffix_aliases={"oldbold": "bold"})
     rename = next(item for item in plan["operations"] if item["kind"] == "rename")
@@ -231,7 +247,9 @@ def test_explicit_suffix_alias_is_applied_and_alias_chains_are_rejected(tmp_path
         "otherbold": "bold",
     }
     with pytest.raises(ValueError, match="Conflicting suffix aliases"):
-        with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+        with patch(
+            "npdb.external.bids.get_bids_validation_report", return_value=report
+        ):
             plan_bids_repair(
                 root,
                 suffix_aliases={"oldbold": "oldevents", "oldevents": "bold"},
@@ -317,10 +335,7 @@ def test_failed_application_leaves_journal_recoverable(tmp_path):
         (directory / filename).write_bytes(filename.encode())
     report = _report(
         root,
-        *[
-            _filename_issue(f"sub-01/func/{filename}")
-            for filename in filenames
-        ],
+        *[_filename_issue(f"sub-01/func/{filename}") for filename in filenames],
     )
     with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
         plan = plan_bids_repair(root)
@@ -339,7 +354,9 @@ def test_failed_application_leaves_journal_recoverable(tmp_path):
 
     with (
         patch("npdb.bids_repair._rename_no_replace", side_effect=fail_second),
-        patch("npdb.bids_repair._recover_journal", side_effect=OSError("defer recovery")),
+        patch(
+            "npdb.bids_repair._recover_journal", side_effect=OSError("defer recovery")
+        ),
         pytest.raises(BidsRepairError, match="rollback also failed"),
     ):
         apply_bids_repair(plan)
@@ -348,10 +365,14 @@ def test_failed_application_leaves_journal_recoverable(tmp_path):
     assert recovered["recovered"] is True
     for filename in filenames:
         assert (directory / filename).is_file()
-        assert not (directory / filename.replace("run2", "run-2").replace("run3", "run-3")).exists()
+        assert not (
+            directory / filename.replace("run2", "run-2").replace("run3", "run-3")
+        ).exists()
 
 
-def test_validator_report_survives_nonzero_exit_but_standalone_validator_stays_strict(tmp_path):
+def test_validator_report_survives_nonzero_exit_but_standalone_validator_stays_strict(
+    tmp_path,
+):
     report = _report(
         tmp_path,
         {
@@ -362,7 +383,9 @@ def test_validator_report_survives_nonzero_exit_but_standalone_validator_stays_s
     )
     completed = Mock(returncode=1, stdout=json.dumps(report), stderr="")
     with (
-        patch("npdb.external.bids.shutil.which", return_value="/tools/bids-validator-rust"),
+        patch(
+            "npdb.external.bids.shutil.which", return_value="/tools/bids-validator-rust"
+        ),
         patch("npdb.external.bids.subprocess.run", return_value=completed),
     ):
         inspected = get_bids_validation_report(tmp_path)
@@ -372,7 +395,9 @@ def test_validator_report_survives_nonzero_exit_but_standalone_validator_stays_s
         assert issue["diagnostics"]["json_valid"] is False
         assert "missing or unsafe" in issue["message"]
     with (
-        patch("npdb.external.bids.shutil.which", return_value="/tools/bids-validator-rust"),
+        patch(
+            "npdb.external.bids.shutil.which", return_value="/tools/bids-validator-rust"
+        ),
         patch("npdb.external.bids.subprocess.run", return_value=completed),
         pytest.raises(RuntimeError, match="validation failed"),
     ):
@@ -431,7 +456,9 @@ def test_final_severity_threshold_is_exclusive(tmp_path, severity, threshold, pa
     )
     with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
         if passes:
-            result = validate_and_repair_bids_dataset(root, severity_threshold=threshold)
+            result = validate_and_repair_bids_dataset(
+                root, severity_threshold=threshold
+            )
         else:
             with pytest.raises(BidsValidationError) as failure:
                 validate_and_repair_bids_dataset(root, severity_threshold=threshold)
@@ -622,11 +649,17 @@ def test_permissive_threshold_does_not_hide_application_failure(tmp_path):
     )
     report = _report(
         root,
-        {"code": "INVALID_DATASET_DESCRIPTION", "severity": "error", "message": "Invalid"},
+        {
+            "code": "INVALID_DATASET_DESCRIPTION",
+            "severity": "error",
+            "message": "Invalid",
+        },
     )
     with (
         patch("npdb.external.bids.get_bids_validation_report", return_value=report),
-        patch("npdb.bids_repair.apply_bids_repair", side_effect=BidsRepairError("unsafe")),
+        patch(
+            "npdb.bids_repair.apply_bids_repair", side_effect=BidsRepairError("unsafe")
+        ),
         pytest.raises(RuntimeError, match="application failed: unsafe"),
     ):
         validate_and_repair_bids_dataset(root, severity_threshold="error")
@@ -675,7 +708,9 @@ def test_warning_only_output_is_concise_and_manifest_retains_details(tmp_path, c
     path = root / "sub-01" / "func" / "sub-01_task-rest_UNKNOWN_events.tsv"
     path.parent.mkdir(parents=True)
     path.write_text("onset\tduration\n0\t1\n", encoding="utf-8")
-    report = _report(root, _filename_issue("sub-01/func/sub-01_task-rest_UNKNOWN_events.tsv"))
+    report = _report(
+        root, _filename_issue("sub-01/func/sub-01_task-rest_UNKNOWN_events.tsv")
+    )
     with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
         result = validate_and_repair_bids_dataset(root)
 
@@ -696,7 +731,9 @@ def test_warning_only_output_is_concise_and_manifest_retains_details(tmp_path, c
 
 def test_failed_final_gate_persists_manifest_beside_journal(tmp_path, capsys):
     root = _make_dataset(tmp_path)
-    (root / "dataset_description.json").write_text('{"Name":"Example","Authors":"Author"}')
+    (root / "dataset_description.json").write_text(
+        '{"Name":"Example","Authors":"Author"}'
+    )
     report = _report(
         root,
         {
@@ -749,9 +786,13 @@ def test_manifest_counts_and_repeated_noop_runs_are_preserved(tmp_path, capsys):
 def test_manifest_write_failure_is_explicit_and_not_success(tmp_path):
     root = _make_dataset(tmp_path)
     with (
-        patch("npdb.external.bids.get_bids_validation_report", return_value=_report(root)),
+        patch(
+            "npdb.external.bids.get_bids_validation_report", return_value=_report(root)
+        ),
         patch("npdb.bids_repair._write_journal", side_effect=OSError("disk full")),
-        pytest.raises(BidsRepairError, match="Cannot save BIDS validation manifest.*disk full"),
+        pytest.raises(
+            BidsRepairError, match="Cannot save BIDS validation manifest.*disk full"
+        ),
     ):
         validate_and_repair_bids_dataset(root)
 
@@ -760,9 +801,13 @@ def test_manifest_refuses_symlink_output_directory(tmp_path):
     root = _make_dataset(tmp_path)
     outside = tmp_path / "outside"
     outside.mkdir()
-    (root.parent / f".{root.name}.npdb-bids-repair").symlink_to(outside, target_is_directory=True)
+    (root.parent / f".{root.name}.npdb-bids-repair").symlink_to(
+        outside, target_is_directory=True
+    )
     with (
-        patch("npdb.external.bids.get_bids_validation_report", return_value=_report(root)),
+        patch(
+            "npdb.external.bids.get_bids_validation_report", return_value=_report(root)
+        ),
         pytest.raises(BidsRepairError, match="symlink manifest directory"),
     ):
         validate_and_repair_bids_dataset(root)
@@ -791,9 +836,7 @@ def _make_validator_dataset(root: Path, *, version: bool = True) -> None:
     (root / "dataset_description.json").write_text(
         json.dumps(description), encoding="utf-8"
     )
-    (root / "participants.tsv").write_text(
-        "participant_id\nsub-01\n", encoding="utf-8"
-    )
+    (root / "participants.tsv").write_text("participant_id\nsub-01\n", encoding="utf-8")
     (root / "sub-01").mkdir()
 
 
@@ -814,29 +857,27 @@ def test_real_validator_confirms_description_and_filename_repairs(
 ):
     root = tmp_path / f"real-{repair_kind}"
     _make_validator_dataset(root, version=repair_kind != "description")
-    invalid_path = _write_invalid_run_file(root) if repair_kind != "description" else None
+    invalid_path = (
+        _write_invalid_run_file(root) if repair_kind != "description" else None
+    )
 
     original_report = _run_real_validator(root)
     original_issues = original_report["datasets"][0]["issues"]
     if repair_kind == "description":
         assert any(
-            item["code"] == "INVALID_DATASET_DESCRIPTION"
-            for item in original_issues
+            item["code"] == "INVALID_DATASET_DESCRIPTION" for item in original_issues
         )
     elif repair_kind == "filename":
         assert any(
-            item["code"] == "INVALID_FILENAME"
-            and "run2_bold" in item["path"]
+            item["code"] == "INVALID_FILENAME" and "run2_bold" in item["path"]
             for item in original_issues
         )
     else:
         assert any(
-            item["code"] == "INVALID_DATASET_DESCRIPTION"
-            for item in original_issues
+            item["code"] == "INVALID_DATASET_DESCRIPTION" for item in original_issues
         )
         assert any(
-            item["code"] == "INVALID_FILENAME"
-            and "run2_bold" in item["path"]
+            item["code"] == "INVALID_FILENAME" and "run2_bold" in item["path"]
             for item in original_issues
         )
 
@@ -849,11 +890,8 @@ def test_real_validator_confirms_description_and_filename_repairs(
         issue["code"] == "INVALID_DATASET_DESCRIPTION" for issue in final_issues
     )
     assert not any(
-        issue["code"] == "INVALID_FILENAME"
-        and "run2_bold" in issue.get("path", "")
+        issue["code"] == "INVALID_FILENAME" and "run2_bold" in issue.get("path", "")
         for issue in final_issues
     )
     if invalid_path is not None:
-        assert invalid_path.with_name(
-            "sub-01_task-rest_run-2_bold.nii.gz"
-        ).is_file()
+        assert invalid_path.with_name("sub-01_task-rest_run-2_bold.nii.gz").is_file()

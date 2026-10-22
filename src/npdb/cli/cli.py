@@ -12,6 +12,7 @@ from dotenv import find_dotenv, load_dotenv
 from rich.live import Live
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 
+from bids_repair.validation import BidsSeverity
 from npdb.annotation.modes import AnnotationMode
 from npdb.cli.display import RepoDownloadDisplay
 from npdb.cli.errors import report_exception
@@ -23,7 +24,6 @@ from npdb.cli.helpers import (
     repo_has_git_annex,
 )
 from npdb.errors import ConfigurationError, UsageError
-from npdb.external.bids import BidsSeverity, BidsValidationError
 from npdb.factories import GiteaManagerFactory, ProviderManagerFactory
 from npdb.managers.git import GitProviderManager
 from npdb.managers.mendeley import MendeleyProviderManager
@@ -95,7 +95,7 @@ class NpdbTyper(typer.Typer):
 
 
 npdb = NpdbTyper(
-    help="NeuroPoly Database CLI for converting, standardizing, and downloading BIDS datasets.",
+    help="NeuroPoly Database CLI for downloading datasets and converting them to Neurobagel.",
     context_settings={"help_option_names": ["--help", "-h"]},
     no_args_is_help=True,
     rich_markup_mode="rich",
@@ -117,13 +117,6 @@ convert = NpdbTyper(
     rich_markup_mode="rich",
 )
 npdb.add_typer(convert, name="convert")
-
-repair = NpdbTyper(
-    help="Plan, apply, and recover safe BIDS dataset repairs.",
-    no_args_is_help=True,
-    rich_markup_mode="rich",
-)
-npdb.add_typer(repair, name="repair")
 
 
 bagel = NpdbTyper(
@@ -148,182 +141,12 @@ def _load_env() -> None:
 
 
 def _parse_suffix_aliases(values: list[str] | None) -> dict[str, str]:
-    aliases: dict[str, str] = {}
-    for value in values or []:
-        source, separator, target = value.partition("=")
-        source = source.strip()
-        target = target.strip()
-        if not separator or not source or not target:
-            raise UsageError(
-                f"Invalid suffix alias '{value}'. Use --suffix-alias OLD=NEW."
-            )
-        if source in aliases and aliases[source] != target:
-            raise UsageError(
-                f"Conflicting suffix aliases for '{source}': "
-                f"'{aliases[source]}' and '{target}'."
-            )
-        aliases[source] = target
-    return aliases
+    from bids_repair.options import parse_suffix_aliases
 
-
-def _echo_repair_plan(plan: dict, output_format: str) -> None:
-    if output_format == "json":
-        typer.echo(json.dumps(plan, indent=2, sort_keys=True))
-        return
-
-    if "application" in plan:
-        application = plan["application"]
-        gate = application["severity_gate"]
-        status = "passed" if gate["passed"] else "failed"
-        typer.echo(f"Final severity check (above {gate['threshold']}): {status}")
-        return
-
-    typer.echo(f"BIDS repair plan for {plan.get('dataset', 'dataset')}")
-    operations = plan.get("operations", [])
-    findings = plan.get("findings", [])
-    typer.echo(f"Proposed operations: {len(operations)}")
-    for operation in operations:
-        source = operation.get("source", "")
-        target = operation.get("target", "")
-        detail = f"{source} -> {target}" if target else source
-        typer.echo(f"  - {operation.get('kind', 'repair')}: {detail}")
-    typer.echo(f"Findings: {len(findings)}")
-    for finding in findings:
-        location = f" [{finding['path']}]" if finding.get("path") else ""
-        resolution = finding.get("resolution") or finding.get("action")
-        detail = f" — {resolution}" if resolution else ""
-        typer.echo(
-            f"  - {finding.get('severity', 'info').upper()} "
-            f"{finding.get('code', 'UNKNOWN')}{location}: "
-            f"{finding.get('message', '')}{detail}"
-        )
-    if plan.get("blocking") and "application" not in plan:
-        typer.echo(
-            "Unresolved error findings in this plan; the final severity check "
-            "runs only after --apply."
-        )
-
-
-@repair.command("bids")
-def repair_bids(
-    dataset: Path = typer.Argument(
-        ...,
-        help="BIDS dataset root to inspect.",
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        readable=True,
-        resolve_path=True,
-    ),
-    apply: bool = typer.Option(
-        False,
-        "--apply",
-        help="Apply safe planned repairs. By default this command is read-only.",
-        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Explicitly request a read-only repair plan (the default).",
-        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
-    ),
-    output_format: str = typer.Option(
-        "human",
-        "--format",
-        help="Output format: human or json.",
-        case_sensitive=False,
-        rich_help_panel=OPTION_GROUP_NAMES["output"],
-    ),
-    bids_version: Optional[str] = typer.Option(
-        None,
-        "--bids-version",
-        help=BIDS_VERSION_HELP,
-        rich_help_panel=OPTION_GROUP_NAMES["input"],
-    ),
-    bids_severity_threshold: BidsSeverityOption = BidsSeverity.WARNING,
-    suffix_alias: Optional[list[str]] = typer.Option(
-        None,
-        "--suffix-alias",
-        help="Explicit suffix mapping OLD=NEW; may be repeated.",
-        rich_help_panel=OPTION_GROUP_NAMES["input"],
-    ),
-):
-    """Plan repairs by default; pass --apply to modify dataset files."""
-    from npdb.bids_repair import plan_bids_repair
-    from npdb.external.bids import validate_and_repair_bids_dataset
-
-    output_format = output_format.lower()
-    if output_format not in {"human", "json"}:
-        raise UsageError("--format must be 'human' or 'json'.")
-    if apply and dry_run:
-        raise UsageError("--apply and --dry-run cannot be used together.")
-    aliases = _parse_suffix_aliases(suffix_alias)
     try:
-        if apply:
-            report = validate_and_repair_bids_dataset(
-                dataset,
-                bids_version=bids_version,
-                suffix_aliases=aliases or None,
-                severity_threshold=bids_severity_threshold,
-            )
-            result = _repair_application_result(dataset, report)
-        else:
-            result = plan_bids_repair(
-                dataset,
-                bids_version=bids_version,
-                suffix_aliases=aliases or None,
-            )
-        _echo_repair_plan(result, output_format)
-    except BidsValidationError as exc:
-        _echo_repair_plan(
-            _repair_application_result(dataset, exc.report), output_format
-        )
-        raise typer.Exit(code=1) from exc
-
-
-def _repair_application_result(dataset: Path, report: dict) -> dict:
-    summary = report["repair"]
-    return {
-        "dataset": str(dataset),
-        "findings": summary["unresolved"],
-        "operations": summary["operations"],
-        "blocking": not summary["severity_gate"]["passed"],
-        "application": summary,
-    }
-
-
-@repair.command("recover")
-def recover_bids(
-    dataset: Path = typer.Argument(
-        ...,
-        help="BIDS dataset root with an incomplete repair journal.",
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        readable=True,
-        resolve_path=True,
-    ),
-    output_format: str = typer.Option(
-        "human",
-        "--format",
-        help="Output format: human or json.",
-        case_sensitive=False,
-        rich_help_panel=OPTION_GROUP_NAMES["output"],
-    ),
-):
-    """Recover the most recent incomplete journaled BIDS repair, if present."""
-    from npdb.bids_repair import recover_bids_repair
-
-    output_format = output_format.lower()
-    if output_format not in {"human", "json"}:
-        raise UsageError("--format must be 'human' or 'json'.")
-    result = recover_bids_repair(dataset)
-    if output_format == "json":
-        typer.echo(json.dumps(result, indent=2, sort_keys=True))
-    else:
-        typer.echo(result.get("message", "BIDS repair recovery completed."))
-        if result.get("journal"):
-            typer.echo(f"Journal: {result['journal']}")
+        return parse_suffix_aliases(values)
+    except ValueError as exc:
+        raise UsageError(str(exc)) from exc
 
 
 @bagel.command("local")
@@ -1827,158 +1650,6 @@ def download(
         raise typer.Exit(code=1)
 
     typer.echo("Download complete!")
-
-
-standardize = NpdbTyper(
-    help="Standardization tools for BIDS datasets.",
-    no_args_is_help=True,
-    rich_markup_mode="rich",
-)
-npdb.add_typer(standardize, name="standardize")
-
-
-@standardize.command("bids")
-def standardize_bids(
-    bids_dir: Path = typer.Argument(
-        ...,
-        help="Path to BIDS dataset root (must contain participants.tsv).",
-        exists=True,
-        file_okay=False,
-        dir_okay=True,
-        resolve_path=True,
-    ),
-    mode: str = typer.Option(
-        AnnotationMode.MANUAL.value,
-        help="Annotation mode: manual|auto|full-auto (assist is not supported here)",
-        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Print changes to terminal without writing files.",
-        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
-    ),
-    no_new_columns: bool = typer.Option(
-        False,
-        "--no-new-columns",
-        help="Don't add missing standard columns (e.g., age, sex).",
-        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
-    ),
-    keep_annotations: bool = typer.Option(
-        False,
-        "--keep-annotations",
-        help="Include Neurobagel Annotations block in participants.json.",
-        rich_help_panel=OPTION_GROUP_NAMES["behavior"],
-    ),
-    phenotype_dict: Optional[Path] = typer.Option(
-        None,
-        help="Path to phenotype dictionary JSON for prefill.",
-        exists=True,
-        rich_help_panel=OPTION_GROUP_NAMES["input"],
-    ),
-    headless: bool = typer.Option(
-        True,
-        "--headless/--headed",
-        help="Run browser in headless mode (automation modes).",
-        rich_help_panel=OPTION_GROUP_NAMES["automation"],
-    ),
-    timeout: int = typer.Option(
-        300,
-        help="Timeout per step in seconds (automation modes).",
-        rich_help_panel=OPTION_GROUP_NAMES["automation"],
-    ),
-    artifacts_dir: Optional[Path] = typer.Option(
-        None,
-        help="Directory for screenshots/traces (automation modes).",
-        file_okay=False,
-        dir_okay=True,
-        writable=True,
-        rich_help_panel=OPTION_GROUP_NAMES["automation"],
-    ),
-    ai_provider: Optional[str] = typer.Option(
-        None,
-        help="AI provider (e.g., 'ollama').",
-        rich_help_panel=OPTION_GROUP_NAMES["ai"],
-    ),
-    ai_model: Optional[str] = typer.Option(
-        None,
-        help="AI model name (e.g., 'neural-chat').",
-        rich_help_panel=OPTION_GROUP_NAMES["ai"],
-    ),
-    header_map: Optional[Path] = typer.Option(
-        None,
-        "--header-map",
-        help="JSON file mapping desired headers to input variants.",
-        exists=True,
-        rich_help_panel=OPTION_GROUP_NAMES["input"],
-    ),
-):
-    """
-    [bold]Standardize BIDS dataset participants.tsv and participants.json[/bold]
-
-    Renames column headers to canonical BIDS names, adds missing standard
-    columns, and generates a BIDS-compliant participants.json sidecar.
-
-    Edits the dataset in-place. Use [cyan]--dry-run[/cyan] to preview changes
-    without writing files.
-    """
-    import asyncio
-
-    from npdb.cli.facade import BIDSStandardizationFacade
-    from npdb.factories import AnnotationConfigFactory
-
-    try:
-        mode_enum = AnnotationMode(mode)
-    except ValueError:
-        raise UsageError(
-            f"Invalid mode '{mode}'. Use one of: manual, auto, full-auto."
-        ) from None
-
-    if mode_enum == AnnotationMode.ASSIST:
-        raise UsageError(
-            "--mode assist is no longer supported for 'npdb standardize bids'. "
-            "Use one of: manual, auto, full-auto."
-        )
-
-    if mode_enum == AnnotationMode.MANUAL and (ai_provider or ai_model):
-        typer.echo("Warning: AI options ignored in manual mode.", err=True)
-
-    if ai_provider and not ai_model:
-        raise UsageError("--ai-model required with --ai-provider.")
-    if ai_model and not ai_provider:
-        raise UsageError("--ai-provider required with --ai-model.")
-
-    participants_tsv = bids_dir / "participants.tsv"
-    if not participants_tsv.exists():
-        raise ConfigurationError(
-            f"participants.tsv not found in {bids_dir}.",
-            hint="Point npdb standardize bids to the BIDS dataset root.",
-        )
-
-    if dry_run:
-        typer.echo("Dry-run mode: no files will be modified.\n")
-
-    config = AnnotationConfigFactory.create_from_cli_args(
-        mode=mode,
-        headless=headless,
-        timeout=timeout,
-        artifacts_dir=artifacts_dir,
-        ai_provider=ai_provider,
-        ai_model=ai_model,
-        phenotype_dictionary=phenotype_dict,
-        dry_run=dry_run,
-        keep_annotations=keep_annotations,
-        header_map=header_map,
-        no_new_columns=no_new_columns,
-    )
-
-    facade = BIDSStandardizationFacade(config)
-    asyncio.run(facade.run(bids_dir))
-
-    if dry_run:
-        typer.echo("\nDry-run complete. No files were modified.")
-    else:
-        typer.echo(f"\nBIDS standardization complete: {bids_dir}")
 
 
 def run() -> None:

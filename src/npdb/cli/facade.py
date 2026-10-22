@@ -12,10 +12,10 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from bids_repair.validation import BidsSeverity, validate_and_repair_bids_dataset
 from npdb.annotation import AnnotationConfig
 from npdb.cli.helpers import extend_bids_description
 from npdb.errors import NpdbError
-from npdb.external.bids import BidsSeverity, validate_and_repair_bids_dataset
 from npdb.managers.annotation import BIDSStandardizer, NeurobagelAnnotator
 from npdb.managers.neuropoly import BagelNeuroPolyMTL
 from npdb.report import LedgerObserver, RunLedger

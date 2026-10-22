@@ -40,8 +40,10 @@ def test_preserves_subject_directories_and_existing_table(tmp_path):
     participants = tmp_path / "participants.tsv"
     participants.write_text("participant_id\tage\tsex\nsub-01\t30\tF\n")
     original = participants.read_bytes()
+
     prepare_provider_dataset(tmp_path)
     prepare_provider_dataset(tmp_path)
+
     assert (tmp_path / "sub-01").is_dir()
     assert (tmp_path / "derivatives/analysis").is_dir()
     assert participants.read_bytes() == original
@@ -51,7 +53,9 @@ def test_existing_derivatives_prevents_reorganization(tmp_path):
     (tmp_path / "derivatives").mkdir()
     (tmp_path / "analysis").mkdir()
     (tmp_path / "sub-Ab12").mkdir()
+
     prepare_provider_dataset(tmp_path)
+
     assert (tmp_path / "analysis").is_dir()
     assert "sub-Ab12\tN/A\tN/A" in (tmp_path / "participants.tsv").read_text()
 
@@ -63,7 +67,9 @@ def test_bids_auxiliary_directories_are_preserved_and_not_subject_sources(tmp_pa
         directory.mkdir()
         (directory / "sub-99_example.txt").write_text("auxiliary")
     (tmp_path / "models").mkdir()
+
     prepare_provider_dataset(tmp_path)
+
     for name in ("sourcedata", "stimuli", "code", "phenotype"):
         assert (tmp_path / name / "sub-99_example.txt").read_text() == "auxiliary"
     assert (tmp_path / "derivatives/models").is_dir()
@@ -75,7 +81,9 @@ def test_bids_auxiliary_directories_are_preserved_and_not_subject_sources(tmp_pa
 def test_only_protected_directories_does_not_create_derivatives(tmp_path):
     for name in ("sub-01", "sourcedata", "stimuli", "code", "phenotype"):
         (tmp_path / name).mkdir()
+
     prepare_provider_dataset(tmp_path)
+
     assert not (tmp_path / "derivatives").exists()
 
 
@@ -83,7 +91,9 @@ def test_rawdata_participants_table_is_preserved(tmp_path):
     rawdata = tmp_path / "rawdata"
     rawdata.mkdir()
     (rawdata / "participants.tsv").write_text("existing table")
+
     prepare_provider_dataset(tmp_path)
+
     assert (tmp_path / "participants.tsv").read_text() == "existing table"
     assert not rawdata.exists()
 
@@ -94,8 +104,10 @@ def test_collision_prevents_moves(tmp_path):
     (rawdata / "README").write_text("raw")
     (tmp_path / "README").write_text("root")
     (tmp_path / "analysis").mkdir()
+
     with pytest.raises(FileExistsError, match="Cannot flatten rawdata"):
         prepare_provider_dataset(tmp_path)
+
     assert (rawdata / "README").read_text() == "raw"
     assert (tmp_path / "README").read_text() == "root"
     assert (tmp_path / "analysis").is_dir()
@@ -106,8 +118,10 @@ def test_missing_subjects_raise_without_empty_table(tmp_path):
     (tmp_path / "derivatives").mkdir()
     (tmp_path / "derivatives/sub-99_T1w.nii.gz").touch()
     (tmp_path / ".sub-01_T1w.nii.gz").touch()
+
     with pytest.raises(ValueError, match="No BIDS subject labels"):
         prepare_provider_dataset(tmp_path)
+
     assert not (tmp_path / "participants.tsv").exists()
 
 

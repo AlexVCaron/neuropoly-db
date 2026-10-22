@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from npdb.annotation.matching import ColumnMatcher
+from bids_repair.matching import ColumnMatcher
 from npdb.automation.mappings.solvers import (
     load_static_mappings,
     load_user_mappings,

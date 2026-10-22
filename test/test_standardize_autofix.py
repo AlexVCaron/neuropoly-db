@@ -29,7 +29,7 @@ from npdb.annotation.autofix import (
 
 
 def test_autofix_helpers_are_defined_in_autofix_module():
-    """The data-cleanup helpers should be implemented in the autofix module."""
+    """BIDS cleanup lives in bids_repair; ontology-specific cleanup stays in npdb."""
     for name in (
         "auto_add_missing_value_sentinels",
         "dedup_participant_ids",
@@ -37,8 +37,12 @@ def test_autofix_helpers_are_defined_in_autofix_module():
         "fix_single_column_tsv",
         "load_categorical_terms",
     ):
-        assert getattr(autofix_module, name).__module__ == "npdb.annotation.autofix"
-        assert getattr(autofix_module, name) is getattr(autofix_module, name)
+        expected = (
+            "bids_repair.tables"
+            if name in {"dedup_participant_ids", "fix_single_column_tsv"}
+            else "npdb.annotation.autofix"
+        )
+        assert getattr(autofix_module, name).__module__ == expected
 
 
 def test_standardize_uses_autofix_cleanup_helpers():

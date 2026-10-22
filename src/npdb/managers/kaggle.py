@@ -23,6 +23,7 @@ class KaggleProviderManager(ProviderManager):
         handle = identifier
         path = cache / "kaggle" / handle.replace("/", "__")
         path.mkdir(parents=True, exist_ok=True)
+
         downloaded = kagglehub.dataset_download(
             handle=handle, path=str(cache / "kaggle")
         )

@@ -54,7 +54,7 @@ class FakeZenodo:
                     "links": {"self": f"https://zenodo.org/api/{key}"},
                 }
                 for key, content in self.files.items()
-            ]
+            ],
         }
 
     def download_file(self, url, out, verbosity, timeout):

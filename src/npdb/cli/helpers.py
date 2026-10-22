@@ -44,6 +44,7 @@ def normalize_repo_url_for_git(repo_url: str) -> str:
         repo_path = repo_path[:tree_idx]
     if not repo_path.endswith(".git"):
         repo_path += ".git"
+
     return f"{parsed.scheme}://{parsed.netloc}{repo_path}"
 
 
@@ -85,9 +86,12 @@ def extend_bids_description(
     Extend the dataset_description.json file using NeuroBagel standard.
     See : https://neurobagel.org/user_guide/dataset_description/#editable-template
     """
-    desc_path = Path(local_clone) / "dataset_description.json"
-    with open(desc_path, "r") as f:
-        description = json.load(f)
+    from bids_repair.description import (
+        read_dataset_description,
+        update_dataset_description,
+    )
+
+    description = read_dataset_description(Path(local_clone))
 
     description["Name"] = dataset
 
@@ -102,7 +106,4 @@ def extend_bids_description(
     description["AccessLink"] = description["RepositoryURL"]
     description["AccessType"] = access_type
 
-    with desc_path.open("w", encoding="utf-8") as stream:
-        json.dump(description, stream, indent=2)
-        stream.write("\n")
-    return description
+    return update_dataset_description(Path(local_clone), description)

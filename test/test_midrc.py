@@ -91,6 +91,7 @@ def test_resolves_all_discovery_links(manager, identifier):
         "npdb.managers.midrc.httpx.get", return_value=discovery_response()
     ) as get:
         assert manager._resolve(identifier) == GUIDS
+
     get.assert_called_once_with(
         f"https://data.midrc.org/mds/metadata/{DATASET}", timeout=30
     )
@@ -108,8 +109,10 @@ def test_resolves_all_discovery_links(manager, identifier):
 def test_standard_and_legacy_manifests(manager, tmp_path, payload):
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps(payload))
+
     with patch("npdb.managers.midrc.httpx.get") as get:
         assert manager._resolve(str(manifest)) == GUIDS[:1]
+
     get.assert_not_called()
 
 
@@ -152,6 +155,7 @@ def test_invalid_discovery_urls_fail_before_network(manager, identifier):
 def test_missing_discovery_links_fail(manager, payload):
     response = discovery_response()
     response._content = json.dumps(payload).encode()
+
     with patch("npdb.managers.midrc.httpx.get", return_value=response):
         with pytest.raises(ValueError):
             manager._resolve(DATASET)
@@ -160,6 +164,7 @@ def test_missing_discovery_links_fail(manager, payload):
 def test_dataset_requires_cache_and_credentials(tmp_path, monkeypatch):
     monkeypatch.delenv("NP_NPDB_CACHE_DIR", raising=False)
     monkeypatch.delenv("NP_MIDRC_CREDENTIALS", raising=False)
+
     with pytest.raises(ValueError, match="credentials"):
         MIDRCProviderManager().fetch(DATASET, tmp_path)
     with pytest.raises(ValueError, match="cache directory"):
@@ -174,6 +179,7 @@ def test_manifest_missing_file_is_not_a_guid(manager, tmp_path):
 def test_local_manifest_named_like_dataset_takes_precedence(manager, tmp_path):
     manifest = tmp_path / "ABC-123"
     manifest.write_text(json.dumps([{"object_id": GUIDS[0]}]))
+
     assert manager.discovery_id(str(manifest)) is None
     assert manager._resolve(str(manifest)) == GUIDS[:1]
 
@@ -283,8 +289,10 @@ def test_cache_not_shared_with_staged_file(manager, sdk, tmp_path, download_only
     output = tmp_path / "out"
     with patch("npdb.managers.midrc.httpx.stream", return_value=response()):
         manager.fetch(GUIDS[0], output)
+
     cached = next(manager.cache_dir.rglob("bundle.zip"))
     (output / "bundle.zip").write_bytes(b"modified")
+
     assert cached.read_bytes() == b"archive"
 
 
@@ -325,8 +333,10 @@ def test_existing_different_destination_is_not_overwritten(manager, sdk, tmp_pat
     output = tmp_path / "out"
     output.mkdir()
     (output / "bundle.zip").write_bytes(b"other")
+
     with pytest.raises(FileExistsError, match="different content"):
         manager.fetch(GUIDS[0], output)
+
     assert (output / "bundle.zip").read_bytes() == b"other"
     sdk["file"].get_presigned_url.assert_not_called()
 
@@ -355,6 +365,7 @@ def test_unsafe_index_names_fail_before_transfer(manager, sdk, tmp_path, name):
 def test_symlink_output_is_rejected(manager, sdk, tmp_path):
     linked = tmp_path / "linked"
     linked.symlink_to(tmp_path, target_is_directory=True)
+
     with pytest.raises(ValueError, match="symlink"):
         manager.fetch(GUIDS[0], linked)
 
@@ -403,8 +414,10 @@ def test_storage_errors_do_not_expose_signed_url(manager, sdk, tmp_path):
 def test_expired_storage_url_is_renewed_once(manager, sdk, tmp_path, download_only):
     setup_download(sdk, [record()])
     expired = response(b"<Error><Code>RequestExpired</Code></Error>", status=403)
+
     with patch("npdb.managers.midrc.httpx.stream", side_effect=[expired, response()]):
         manager.fetch(GUIDS[0], tmp_path / "out")
+
     assert sdk["file"].get_presigned_url.call_count == 2
 
 
@@ -427,6 +440,7 @@ def test_expired_url_retry_is_bounded(manager, sdk, tmp_path):
 def test_invalid_signed_response(manager, sdk, tmp_path, signed):
     setup_download(sdk, [record()])
     sdk["file"].get_presigned_url.return_value = signed
+
     with pytest.raises(ValueError, match="signed"):
         manager.fetch(GUIDS[0], tmp_path / "out")
 
@@ -438,6 +452,7 @@ def test_authorization_error_is_explicit(manager, sdk, tmp_path):
     unauthorized = Response()
     unauthorized.status_code = 401
     sdk["file"].get_presigned_url.side_effect = HTTPError(response=unauthorized)
+
     with pytest.raises(RuntimeError, match="HTTP 401"):
         manager.fetch(GUIDS[0], tmp_path / "out")
 

@@ -2,11 +2,15 @@ import json
 from unittest.mock import Mock, patch
 
 import pytest
+from bidsschematools.schema import load_schema
 from typer.testing import CliRunner
 
+from bids_repair.cli import app
 from npdb.cli.cli import local2bagel, npdb
 
 runner = CliRunner()
+repair_runner = CliRunner()
+VERSION = load_schema().bids_version
 
 
 def test_repair_bids_defaults_to_read_only_json_plan(tmp_path):
@@ -20,20 +24,19 @@ def test_repair_bids_defaults_to_read_only_json_plan(tmp_path):
         "operations": [],
         "blocking": False,
     }
+
     with (
-        patch("npdb.bids_repair.plan_bids_repair", return_value=plan) as planner,
+        patch("bids_repair.cli.plan_bids_repair", return_value=plan) as planner,
         patch("npdb.bids_repair.apply_bids_repair") as apply,
     ):
-        result = runner.invoke(
-            npdb,
+        result = repair_runner.invoke(
+            app,
             [
-                "repair",
-                "bids",
                 str(dataset),
                 "--format",
                 "json",
                 "--bids-version",
-                "1.9.0",
+                VERSION,
                 "--suffix-alias",
                 "FA=T1w",
                 "--suffix-alias",
@@ -45,8 +48,10 @@ def test_repair_bids_defaults_to_read_only_json_plan(tmp_path):
     assert json.loads(result.stdout) == plan
     planner.assert_called_once_with(
         dataset,
-        bids_version="1.9.0",
+        bids_version=VERSION,
         suffix_aliases={"FA": "T1w", "RARE": "T1w"},
+        target_version=VERSION,
+        schema_path=None,
     )
     apply.assert_not_called()
 
@@ -62,21 +67,28 @@ def test_repair_bids_apply_is_explicit_and_returns_application_result(tmp_path):
         "backups": [],
         "severity_gate": {"threshold": "warning", "passed": True, "exceeding": []},
     }
+
     with (
-        patch("npdb.bids_repair.plan_bids_repair") as planner,
+        patch("bids_repair.cli.plan_bids_repair") as planner,
         patch(
-            "npdb.external.bids.validate_and_repair_bids_dataset",
+            "bids_repair.cli.validate_and_repair_bids_dataset",
             return_value={"repair": application},
         ) as apply,
     ):
-        result = runner.invoke(
-            npdb, ["repair", "bids", str(dataset), "--apply", "--format", "json"]
+        result = repair_runner.invoke(
+            app,
+            [str(dataset), "--apply", "--format", "json", "--bids-version", VERSION],
         )
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["application"] == application
     apply.assert_called_once_with(
-        dataset, bids_version=None, suffix_aliases=None, severity_threshold="warning"
+        dataset,
+        bids_version=VERSION,
+        suffix_aliases=None,
+        severity_threshold="warning",
+        target_version=VERSION,
+        schema_path=None,
     )
     planner.assert_not_called()
 
@@ -94,11 +106,13 @@ def test_warning_only_unresolved_repair_does_not_fail_apply(tmp_path):
     }
     with (
         patch(
-            "npdb.external.bids.validate_and_repair_bids_dataset",
+            "bids_repair.cli.validate_and_repair_bids_dataset",
             return_value={"repair": application},
         ),
     ):
-        result = runner.invoke(npdb, ["repair", "bids", str(dataset), "--apply"])
+        result = repair_runner.invoke(
+            app, [str(dataset), "--apply", "--bids-version", VERSION]
+        )
 
     assert result.exit_code == 0, result.output
 
@@ -106,11 +120,10 @@ def test_warning_only_unresolved_repair_does_not_fail_apply(tmp_path):
 def test_repair_bids_rejects_conflicting_aliases(tmp_path):
     dataset = tmp_path / "dataset"
     dataset.mkdir()
-    result = runner.invoke(
-        npdb,
+
+    result = repair_runner.invoke(
+        app,
         [
-            "repair",
-            "bids",
             str(dataset),
             "--suffix-alias",
             "FA=T1w",
@@ -127,9 +140,10 @@ def test_repair_recover_json_calls_recovery_api(tmp_path):
     dataset = tmp_path / "dataset"
     dataset.mkdir()
     recovery = {"status": "recovered", "journal": str(dataset / "journal.json")}
-    with patch("npdb.bids_repair.recover_bids_repair", return_value=recovery) as recover:
-        result = runner.invoke(
-            npdb, ["repair", "recover", str(dataset), "--format", "json"]
+
+    with patch("bids_repair.cli.recover_bids_repair", return_value=recovery) as recover:
+        result = repair_runner.invoke(
+            app, ["recover", str(dataset), "--format", "json"]
         )
 
     assert result.exit_code == 0, result.output
@@ -142,6 +156,7 @@ def test_local_conversion_passes_repair_options_to_facade(tmp_path):
     dataset.mkdir()
     (dataset / "dataset_description.json").write_text("{}", encoding="utf-8")
     output = tmp_path / "output"
+
     with patch("npdb.cli.facade.DatasetConversionFacade.run") as run:
         result = runner.invoke(
             npdb,
@@ -276,41 +291,57 @@ def test_repair_apply_gates_only_revalidated_findings(
         '{"Name":"Example","BIDSVersion":"1.9.0","Authors":"One author"}'
     )
     initial = {
-        "datasets": [{
-            "dataset": str(dataset),
-            "errors": 1,
-            "warnings": 0,
-            "issues": [{
-                "code": "INVALID_DATASET_DESCRIPTION",
-                "severity": "error",
-                "message": "Invalid description",
-            }],
-        }]
+        "datasets": [
+            {
+                "dataset": str(dataset),
+                "errors": 1,
+                "warnings": 0,
+                "issues": [
+                    {
+                        "code": "INVALID_DATASET_DESCRIPTION",
+                        "severity": "error",
+                        "message": "Invalid description",
+                    }
+                ],
+            }
+        ]
     }
     final = {
-        "datasets": [{
-            "dataset": str(dataset),
-            "errors": int(final_severity == "error"),
-            "warnings": int(final_severity == "warning"),
-            "issues": (
-                [{
-                    "code": "UNSUPPORTED",
-                    "severity": final_severity,
-                    "message": "Unresolved",
-                    "path": "unresolved-file",
-                }] if final_severity else []
-            ),
-        }]
+        "datasets": [
+            {
+                "dataset": str(dataset),
+                "errors": int(final_severity == "error"),
+                "warnings": int(final_severity == "warning"),
+                "issues": (
+                    [
+                        {
+                            "code": "UNSUPPORTED",
+                            "severity": final_severity,
+                            "message": "Unresolved",
+                            "path": "unresolved-file",
+                        }
+                    ]
+                    if final_severity
+                    else []
+                ),
+            }
+        ]
     }
     with patch(
         "npdb.external.bids.get_bids_validation_report",
         side_effect=[initial, final],
     ) as validate:
-        result = runner.invoke(
-            npdb,
+        result = repair_runner.invoke(
+            app,
             [
-                "repair", "bids", str(dataset), "--apply", "--format", "json",
-                "--bids-severity-threshold", threshold,
+                str(dataset),
+                "--apply",
+                "--format",
+                "json",
+                "--bids-version",
+                VERSION,
+                "--bids-severity-threshold",
+                threshold,
             ],
         )
     assert result.exit_code == exit_code, result.output
@@ -328,10 +359,9 @@ def test_invalid_severity_threshold_is_rejected_before_repair(tmp_path):
     dataset = tmp_path / "dataset"
     dataset.mkdir()
     with patch("npdb.external.bids.validate_and_repair_bids_dataset") as repair:
-        result = runner.invoke(
-            npdb,
-            ["repair", "bids", str(dataset), "--apply",
-             "--bids-severity-threshold", "invalid"],
+        result = repair_runner.invoke(
+            app,
+            [str(dataset), "--apply", "--bids-severity-threshold", "invalid"],
         )
     assert result.exit_code == 2
     repair.assert_not_called()
@@ -340,6 +370,14 @@ def test_invalid_severity_threshold_is_rejected_before_repair(tmp_path):
 def test_human_apply_output_stays_bounded_for_large_failure_manifest(tmp_path):
     dataset = tmp_path / "dataset"
     dataset.mkdir()
+    (dataset / "dataset_description.json").write_text(
+        json.dumps(
+            {
+                "Name": "Example",
+                "BIDSVersion": VERSION,
+            }
+        )
+    )
     issues = [
         {
             "code": "UNSUPPORTED",
@@ -350,18 +388,26 @@ def test_human_apply_output_stays_bounded_for_large_failure_manifest(tmp_path):
         for index in range(1000)
     ]
     report = {
-        "datasets": [{
-            "dataset": str(dataset),
-            "errors": 0,
-            "warnings": len(issues),
-            "issues": issues,
-        }]
+        "datasets": [
+            {
+                "dataset": str(dataset),
+                "errors": 0,
+                "warnings": len(issues),
+                "issues": issues,
+            }
+        ]
     }
     with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
-        result = runner.invoke(
-            npdb,
-            ["repair", "bids", str(dataset), "--apply",
-             "--bids-severity-threshold", "info"],
+        result = repair_runner.invoke(
+            app,
+            [
+                str(dataset),
+                "--apply",
+                "--bids-version",
+                VERSION,
+                "--bids-severity-threshold",
+                "info",
+            ],
         )
     assert result.exit_code == 1, result.output
     assert "info=0, warning=1000, error=0" in result.output
@@ -399,29 +445,44 @@ def test_local_conversion_stops_only_when_final_gate_fails(
     )
     (dataset / "participants.tsv").write_text("participant_id\nsub-01\n")
     report = {
-        "datasets": [{
-            "dataset": str(dataset),
-            "errors": int(severity == "error"),
-            "warnings": int(severity == "warning"),
-            "issues": [{
-                "code": "UNSUPPORTED",
-                "severity": severity,
-                "message": "Not repairable",
-                "path": "unresolved-file",
-            }],
-        }]
+        "datasets": [
+            {
+                "dataset": str(dataset),
+                "errors": int(severity == "error"),
+                "warnings": int(severity == "warning"),
+                "issues": [
+                    {
+                        "code": "UNSUPPORTED",
+                        "severity": severity,
+                        "message": "Not repairable",
+                        "path": "unresolved-file",
+                    }
+                ],
+            }
+        ]
     }
     with (
         patch("npdb.external.bids.get_bids_validation_report", return_value=report),
-        patch("npdb.cli.facade.NeurobagelAnnotator.execute", return_value=True) as annotate,
-        patch("npdb.cli.facade.BagelNeuroPolyMTL.convert_bids", return_value=None) as convert,
+        patch(
+            "npdb.cli.facade.NeurobagelAnnotator.execute", return_value=True
+        ) as annotate,
+        patch(
+            "npdb.cli.facade.BagelNeuroPolyMTL.convert_bids", return_value=None
+        ) as convert,
     ):
         result = runner.invoke(
             npdb,
             [
-                "convert", "bagel", "local", str(dataset), "https://example.com/repo",
-                str(tmp_path / "output"), "--mode", "manual",
-                "--bids-severity-threshold", threshold,
+                "convert",
+                "bagel",
+                "local",
+                str(dataset),
+                "https://example.com/repo",
+                str(tmp_path / "output"),
+                "--mode",
+                "manual",
+                "--bids-severity-threshold",
+                threshold,
             ],
         )
     assert result.exit_code == exit_code, result.output

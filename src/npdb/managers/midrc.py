@@ -35,6 +35,7 @@ class MIDRCProviderManager(ProviderManager):
             "NP_MIDRC_ENDPOINT", "https://data.midrc.org"
         )
         self.endpoint = self.endpoint.rstrip("/")
+
         parsed = urlparse(self.endpoint)
         if (
             parsed.scheme != "https"
@@ -68,6 +69,7 @@ class MIDRCProviderManager(ProviderManager):
             if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
                 raise ValueError("Invalid MIDRC Discovery dataset ID.")
             return value
+
         if Path(value).is_file():
             return None
         if re.fullmatch(r"[A-Za-z0-9]+-[A-Za-z0-9]+", value):
@@ -90,6 +92,7 @@ class MIDRCProviderManager(ProviderManager):
             archives = [source]
         if not archives:
             return super().unpack(source)
+
         destination = Path(output_dir) if output_dir is not None else source
         if not source.is_dir() and output_dir is None:
             raise ValueError("Pass output_dir to unpack a local MIDRC archive.")
@@ -112,6 +115,7 @@ class MIDRCProviderManager(ProviderManager):
         staging = root / "sourcedata" / "midrc"
         if not staging.exists():
             return super().prepare(root)
+
         manifest = json.loads((staging / "archives.json").read_text(encoding="utf-8"))
         output = self._file_path(root, manifest["Name"])
         if output.exists():
@@ -150,6 +154,7 @@ class MIDRCProviderManager(ProviderManager):
                         f"Prepared MIDRC dataset is incomplete: {path}"
                     )
             return output
+
         tables = prepare_metadata(staging / "structured", output, manifest["Name"])
         report = prepare_imaging(staging, output, tables)
         prepare_derivatives(staging, output, tables, report)
@@ -163,6 +168,7 @@ class MIDRCProviderManager(ProviderManager):
             raise ValueError(
                 "MIDRC manifest must contain a non-empty list of file entries."
             )
+
         guids: list[str] = []
         for entry in entries:
             if not isinstance(entry, dict):
@@ -193,6 +199,7 @@ class MIDRCProviderManager(ProviderManager):
             raise ValueError(
                 f"MIDRC manifest must be a regular JSON file: {identifier}"
             )
+
         dataset = self.discovery_id(identifier)
         if dataset:
             self.ensure_cache_dir(required=True)
@@ -213,6 +220,7 @@ class MIDRCProviderManager(ProviderManager):
                     "Export a file manifest from Exploration instead."
                 )
             return self._manifest_guids(links)
+
         if manifest.suffix.lower() == ".json" or identifier.startswith(
             ("/", "./", "../")
         ):
@@ -230,6 +238,7 @@ class MIDRCProviderManager(ProviderManager):
             or any(part in {"", ".", ".."} for part in name.split("/"))
         ):
             raise ValueError(f"Unsafe MIDRC filename: {name!r}.")
+
         target = root / relative
         if any(path.is_symlink() for path in (target, *target.parents)):
             raise ValueError(f"Refusing MIDRC symlink destination: {target}.")
@@ -242,6 +251,7 @@ class MIDRCProviderManager(ProviderManager):
         size = record.get("size")
         if not isinstance(size, int) or isinstance(size, bool) or size < 0:
             raise ValueError("MIDRC index record requires a non-negative file size.")
+
         hashes = record.get("hashes") or {}
         if not isinstance(hashes, dict):
             raise ValueError("Invalid MIDRC index hashes.")
@@ -289,6 +299,7 @@ class MIDRCProviderManager(ProviderManager):
             raise FileExistsError(
                 f"Remove the incomplete MIDRC file before retrying: {partial}"
             )
+
         try:
             for attempt in range(2):
                 try:
@@ -346,6 +357,7 @@ class MIDRCProviderManager(ProviderManager):
                     raise RuntimeError(
                         f"MIDRC storage download failed for {guid}; retry the command."
                     ) from None
+
             if not self._verified(partial, size, algorithm, digest):
                 raise ValueError(f"MIDRC download size/checksum mismatch for {guid}.")
             partial.replace(target)
@@ -368,10 +380,12 @@ class MIDRCProviderManager(ProviderManager):
                 hint="npdb convert bagel midrc ... --credentials-path /absolute/path/to/credentials.json",
                 docs="Development-Provider-MIDRC#access",
             )
+
         guids = self._resolve(identifier)
         auth = Gen3Auth(self.endpoint, self.credentials_path)
         index = Gen3Index(self.endpoint, auth)
         files = Gen3File(self.endpoint, auth)
+
         output_path = Path(output_dir)
         if any(path.is_symlink() for path in (output_path, *output_path.parents)):
             raise ValueError("MIDRC output directory must not contain symlinks.")
@@ -385,6 +399,7 @@ class MIDRCProviderManager(ProviderManager):
             if any(path.is_symlink() for path in (cache, *cache.parents)):
                 raise ValueError("MIDRC cache directory must not contain symlinks.")
             cache.mkdir(parents=True, exist_ok=True)
+
         jobs = []
         names: set[Path] = set()
         for guid in guids:
@@ -421,6 +436,7 @@ class MIDRCProviderManager(ProviderManager):
                 source != target and self._verified(source, size, algorithm, digest)
             )
             jobs.append((guid, target, source, size, algorithm, digest, staged, cached))
+
         staging_bytes = sum(job[3] for job in jobs if not job[6])
         cache_bytes = sum(job[3] for job in jobs if not job[7] and cache)
         same_volume = (
@@ -436,6 +452,7 @@ class MIDRCProviderManager(ProviderManager):
             raise OSError(
                 f"Insufficient disk space for MIDRC cache: need {cache_bytes} bytes."
             )
+
         total_steps = len(jobs) + 1
         download_step = (
             f"Downloading {len(jobs)} file(s), {sum(job[3] for job in jobs)} bytes"

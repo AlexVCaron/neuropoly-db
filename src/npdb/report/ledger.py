@@ -56,6 +56,7 @@ class RunLedger:
         """
         if self.path is None:
             return
+
         payload = {
             "outcome": self.outcome,
             "warnings": self.warnings,

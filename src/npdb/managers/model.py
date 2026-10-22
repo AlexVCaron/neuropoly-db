@@ -28,6 +28,7 @@ def default_download_cache(cache_dir: str | Path | None = None) -> Path:
     configured = cache_dir or os.environ.get("NP_NPDB_CACHE_DIR")
     if configured:
         return Path(configured)
+
     cache_home = os.environ.get("XDG_CACHE_HOME")
     return (
         (Path(cache_home) if cache_home else Path.home() / ".cache")
@@ -164,10 +165,7 @@ class ProviderManager(ProviderManagerBase):
         return unpack_provider_archives(fetched)
 
     def prepare(self, root: str | Path) -> Path:
-        from npdb.managers.preparation import (
-            find_dataset_root,
-            prepare_provider_dataset,
-        )
+        from bids_repair.dataset import find_dataset_root, prepare_provider_dataset
 
         return prepare_provider_dataset(find_dataset_root(Path(root)))
 
