@@ -35,7 +35,14 @@ def test_git_fetch_checks_out_full_repository(tmp_path: Path) -> None:
     _git("init", "-q", "-b", "main", cwd=work)
     _git("add", ".", cwd=work)
     _git(
-        "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "i",
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@t",
+        "commit",
+        "-q",
+        "-m",
+        "i",
         cwd=work,
     )
     bare = tmp_path / "repo.git"
@@ -46,6 +53,4 @@ def test_git_fetch_checks_out_full_repository(tmp_path: Path) -> None:
 
     assert (out / "dataset_description.json").is_file()
     assert (out / "sub-01" / "anat" / "sub-01_T1w.json").is_file()
-    assert (out / "participants.tsv").read_text().splitlines()[1].startswith(
-        "sub-01\t"
-    )
+    assert (out / "participants.tsv").read_text().splitlines()[1].startswith("sub-01\t")

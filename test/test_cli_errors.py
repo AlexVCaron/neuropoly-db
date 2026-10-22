@@ -1,5 +1,6 @@
 """Unified CLI error handling: every anticipated failure gets a tailored message."""
 
+import asyncio
 import errno
 import json
 import socket
@@ -10,8 +11,11 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
+from bidsschematools.schema import load_schema
 from typer.testing import CliRunner
+from typer.testing import CliRunner as RepairRunner
 
+from bids_repair.cli import app as repair_app
 from npdb.annotation.preflight import PreflightError
 from npdb.bids_repair import BidsRepairError
 from npdb.cli.cli import npdb
@@ -212,7 +216,7 @@ CASES = [
         BidsValidationError("3 errors", report={}),
         "BIDS validation failed",
         1,
-        "repair bids",
+        "bids-repair",
         False,
     ),
     (
@@ -348,10 +352,11 @@ def local_args(tmp_path, *extra):
     ]
 
 
-def assert_clean(result, code, *fragments):
+def assert_clean(result, code, *fragments, rich_usage=False):
     assert result.exit_code == code, result.output
     assert "Traceback (most recent call last)" not in result.output
-    assert "╭" not in result.output
+    if not rich_usage:
+        assert "╭" not in result.output
     for fragment in fragments:
         assert fragment in result.output, result.output
 
@@ -376,7 +381,7 @@ def test_convert_usage_errors(tmp_path, extra, fragment):
     [
         (
             BidsValidationError("2 errors above warning", report={}),
-            ["BIDS validation failed", "repair bids"],
+            ["BIDS validation failed", "bids-repair"],
         ),
         (
             PreflightError("Unsupported suffix", "TEM not supported"),
@@ -475,71 +480,84 @@ def test_debug_mode_reports_expected_errors_too(tmp_path, monkeypatch):
 def test_standardize_errors(tmp_path):
     dataset = tmp_path / "ds"
     dataset.mkdir()
+    arguments = [
+        "standardize",
+        str(dataset),
+        "--bids-version",
+        load_schema().bids_version,
+    ]
+    result = RepairRunner().invoke(repair_app, arguments)
+    assert_clean(result, 1, "participants.tsv")
     assert_clean(
-        runner.invoke(npdb, ["standardize", "bids", str(dataset)]),
-        1,
-        "participants.tsv not found",
-    )
-    assert_clean(
-        runner.invoke(npdb, ["standardize", "bids", str(dataset), "--mode", "assist"]),
+        RepairRunner().invoke(repair_app, [*arguments, "--mode", "assist"]),
         2,
-        "no longer supported",
+        "No such option",
+        rich_usage=True,
     )
     (dataset / "participants.tsv").write_text("participant_id\nsub-01\n")
     with patch(
-        "npdb.cli.facade.BIDSStandardizationFacade.run",
-        new=AsyncMock(side_effect=stop_iteration_in_coroutine()),
+        "bids_repair.cli.standardize_dataset",
+        side_effect=RuntimeError("standardization failed"),
     ):
-        result = runner.invoke(
-            npdb, ["standardize", "bids", str(dataset)], catch_exceptions=False
-        )
-    assert_clean(
-        result, 1, "Unexpected error", "RuntimeError: coroutine raised StopIteration"
-    )
+        result = RepairRunner().invoke(repair_app, arguments)
+    assert_clean(result, 1, "standardization failed")
 
 
 def test_standardize_fails_when_standardizer_fails(tmp_path):
+    from npdb.annotation import AnnotationConfig
+    from npdb.cli.facade import BIDSStandardizationFacade
+    from npdb.errors import NpdbError
+
     dataset = tmp_path / "ds"
     dataset.mkdir()
     (dataset / "participants.tsv").write_text("participant_id\nsub-01\n")
     with patch(
         "npdb.cli.facade.BIDSStandardizer.execute", new=AsyncMock(return_value=False)
     ):
-        result = runner.invoke(npdb, ["standardize", "bids", str(dataset)])
-    assert_clean(result, 1, "Standardization did not complete")
+        with pytest.raises(NpdbError, match="Standardization did not complete"):
+            asyncio.run(BIDSStandardizationFacade(AnnotationConfig()).run(dataset))
 
 
 @pytest.mark.parametrize("fmt", ["human", "json"])
 def test_repair_errors(tmp_path, fmt):
+    arguments = [
+        str(tmp_path),
+        "--bids-version",
+        load_schema().bids_version,
+        "--format",
+        fmt,
+    ]
     with patch(
-        "npdb.bids_repair.plan_bids_repair", side_effect=BidsRepairError("stale plan")
+        "bids_repair.cli.plan_bids_repair", side_effect=BidsRepairError("stale plan")
     ):
-        result = runner.invoke(npdb, ["repair", "bids", str(tmp_path), "--format", fmt])
+        result = RepairRunner().invoke(repair_app, arguments)
     assert result.exit_code == 1
     if fmt == "json":
         payload = json.loads(result.output.strip().splitlines()[-1])
         assert payload["error"]["title"] == "BIDS repair failed"
         assert "repair recover" in payload["error"]["hint"]
     else:
-        assert_clean(result, 1, "BIDS repair failed")
+        assert_clean(result, 1, "stale plan")
     with patch(
-        "npdb.bids_repair.recover_bids_repair",
+        "bids_repair.cli.recover_bids_repair",
         side_effect=BidsRepairError("journal corrupt"),
     ):
         assert_clean(
-            runner.invoke(npdb, ["repair", "recover", str(tmp_path)]),
+            RepairRunner().invoke(repair_app, ["recover", str(tmp_path)]),
             1,
             "journal corrupt",
         )
     assert_clean(
-        runner.invoke(npdb, ["repair", "bids", str(tmp_path), "--format", "xml"]),
+        RepairRunner().invoke(repair_app, [str(tmp_path), "--format", "xml"]),
         2,
         "--format",
+        rich_usage=True,
     )
     assert_clean(
-        runner.invoke(npdb, ["repair", "bids", str(tmp_path), "--apply", "--dry-run"]),
+        RepairRunner().invoke(repair_app, [str(tmp_path), "--apply", "--dry-run"]),
         2,
         "cannot be used together",
+        rich_usage=True,
     )
 
 

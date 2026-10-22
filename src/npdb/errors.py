@@ -15,7 +15,9 @@ class NpdbError(Exception):
     title = "Error"
     exit_code = 1
 
-    def __init__(self, message: str, *, hint: str | None = None, docs: str | None = None):
+    def __init__(
+        self, message: str, *, hint: str | None = None, docs: str | None = None
+    ):
         super().__init__(message)
         self.message = message
         self.hint = hint
@@ -41,8 +43,16 @@ class GitCommandError(NpdbError, RuntimeError):
 
 _SECRET_ENV = re.compile(r"(TOKEN|KEY|SECRET|PASSWORD|CREDENTIALS)", re.IGNORECASE)
 _SECRET_PATTERNS = [
-    (re.compile(r"(Authorization:\s*(?:Basic|Bearer|token)\s+)\S+", re.IGNORECASE), r"\1***"),
-    (re.compile(r"([?&](?:access_token|token|api_key|key)=)[^&\s'\"]+", re.IGNORECASE), r"\1***"),
+    (
+        re.compile(r"(Authorization:\s*(?:Basic|Bearer|token)\s+)\S+", re.IGNORECASE),
+        r"\1***",
+    ),
+    (
+        re.compile(
+            r"([?&](?:access_token|token|api_key|key)=)[^&\s'\"]+", re.IGNORECASE
+        ),
+        r"\1***",
+    ),
     (re.compile(r"(https?://)[^/\s:@]+:[^/\s@]+@"), r"\1***@"),
 ]
 
@@ -54,6 +64,7 @@ def redact(text: str) -> str:
     for name, value in os.environ.items():
         if len(value) >= 6 and _SECRET_ENV.search(name):
             text = text.replace(value, "***")
+
     home = os.path.expanduser("~")
     if home and home != "/":
         text = text.replace(home, "~")

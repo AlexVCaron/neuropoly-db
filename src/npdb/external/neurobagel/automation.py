@@ -84,7 +84,8 @@ class NBAnnotationToolBrowserSession:
         """
         if async_playwright is None:
             raise MissingExtraError(
-                "Browser automation (--mode assist|auto|full-auto)", "annotation-automation"
+                "Browser automation (--mode assist|auto|full-auto)",
+                "annotation-automation",
             )
         try:
             self.playwright = await async_playwright().start()

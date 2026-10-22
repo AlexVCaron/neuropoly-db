@@ -34,6 +34,7 @@ class GitProviderManager(GitManager, ProviderManager):
     def fetch(self, identifier: str, output_dir: str | Path, **kwargs: Any) -> Path:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
+
         # Non-cone sparse patterns are gitignore-style: "/*" checks out everything.
         self.clone_sparse(identifier, sparse_paths=["/*"], dest=output_path)
         return self.prepare_fetched(output_path)

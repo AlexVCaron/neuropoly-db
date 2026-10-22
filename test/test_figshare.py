@@ -138,6 +138,7 @@ def test_collection_prepares_shared_dataset_after_all_component_archives(tmp_pat
         archive.writestr("rawdata/sub-01/anat/sub-01_T2w.nii.gz", b"first")
         archive.writestr("rawdata/sub-02/anat/sub-02_T2w.nii.gz", b"second")
     manager = FigshareProviderManager()
+
     with (
         patch(
             "npdb.managers.figshare.httpx.get",
@@ -158,6 +159,7 @@ def test_collection_prepares_shared_dataset_after_all_component_archives(tmp_pat
         ) as preparation,
     ):
         result = manager.fetch("10.6084/m9.figshare.c.7372564", tmp_path)
+
     preparation.assert_called_once_with(tmp_path)
     assert result == tmp_path
     assert (result / "sub-01/anat/sub-01_T2w.nii.gz").read_bytes() == b"first"
@@ -189,6 +191,7 @@ def test_collection_resolves_actual_member_ids(identifier):
     member_ids = [26403595, 26403442, 26403565, 26403262]
     # Collection members have no resource_doi linking them to the collection.
     members = [{"id": article_id, "resource_doi": None} for article_id in member_ids]
+
     with (
         patch(
             "npdb.managers.figshare.httpx.get", return_value=_response(members)
@@ -198,6 +201,7 @@ def test_collection_resolves_actual_member_ids(identifier):
         result = FigshareProviderManager()._article_ids(
             identifier, {"Accept": "application/json"}
         )
+
     assert result == member_ids
     assert "/collections/7372564/articles" in get.call_args.args[0]
     post.assert_not_called()

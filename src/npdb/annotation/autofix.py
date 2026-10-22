@@ -12,6 +12,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from bids_repair.tables import (
+    dedup_participant_ids,
+    fill_empty_id_rows,
+    fix_single_column_tsv,
+    fix_trailing_empty_tsv_cells,
+    strip_tsv_cell_whitespace,
+)
+
 # ---------------------------------------------------------------------------
 # NA-like sentinel patterns recognised by NeuroBagel
 # ---------------------------------------------------------------------------
@@ -426,181 +434,6 @@ def fix_missing_levels(tsv_path: Path, annotations_path: Path) -> list[str]:
             fh.writelines(new_lines)
 
     return warnings_list
-
-
-def strip_tsv_cell_whitespace(tsv_path: Path) -> list[str]:
-    """Trim leading/trailing whitespace from TSV headers and cells.
-
-    Padded values (e.g. ``"sub-06 "``) otherwise fail exact matching against
-    BIDS subject folders and annotated categorical levels.
-    """
-    if not tsv_path.exists():
-        return []
-    with tsv_path.open(newline="", encoding="utf-8") as stream:
-        rows = list(csv.reader(stream, delimiter="\t"))
-    changed: list[str] = []
-    for index, row in enumerate(rows, 1):
-        for position, value in enumerate(row):
-            stripped = value.strip()
-            if stripped != value:
-                row[position] = stripped
-                changed.append(f"row {index}: {value!r} → {stripped!r}")
-    if not changed:
-        return []
-    with tsv_path.open("w", newline="", encoding="utf-8") as stream:
-        csv.writer(stream, delimiter="\t", lineterminator="\n").writerows(rows)
-    shown = "; ".join(changed[:10])
-    more = f"; … {len(changed) - 10} more" if len(changed) > 10 else ""
-    return [
-        f"strip_tsv_cell_whitespace: trimmed whitespace in {len(changed)} "
-        f"cell(s) of {tsv_path.name}: {shown}{more}."
-    ]
-
-
-def fix_trailing_empty_tsv_cells(tsv_path: Path) -> list[str]:
-    """Remove only surplus empty cells that would shift pandas' TSV columns."""
-    if not tsv_path.exists():
-        return []
-    with tsv_path.open(newline="", encoding="utf-8") as stream:
-        rows = list(csv.reader(stream, delimiter="\t"))
-    if not rows:
-        return []
-    width = len(rows[0])
-    corrected = 0
-    for index, row in enumerate(rows[1:], 2):
-        if len(row) <= width:
-            continue
-        if any(value != "" for value in row[width:]):
-            raise ValueError(
-                f"{tsv_path.name}: row {index} has non-empty cells beyond "
-                f"the {width} header columns; refusing to discard data."
-            )
-        del row[width:]
-        corrected += 1
-    if corrected:
-        with tsv_path.open("w", newline="", encoding="utf-8") as stream:
-            csv.writer(stream, delimiter="\t", lineterminator="\n").writerows(rows)
-        return [
-            f"fix_trailing_empty_tsv_cells: removed surplus empty cells from "
-            f"{corrected} row(s) in {tsv_path.name}."
-        ]
-    return []
-
-
-def fix_single_column_tsv(tsv_path: Path) -> list[str]:
-    """Detect and fix a TSV that uses a non-tab delimiter."""
-    warnings: list[str] = []
-    if not tsv_path.exists():
-        return warnings
-
-    with open(tsv_path, "r", encoding="utf-8") as fh:
-        lines = fh.readlines()
-    if not lines:
-        return warnings
-
-    header = lines[0].rstrip("\n")
-    if "\t" in header:
-        return warnings
-
-    delimiter = None
-    for candidate in (",", ";", "|"):
-        if len(header.split(candidate)) > 1:
-            delimiter = candidate
-            break
-
-    if delimiter is None:
-        return warnings
-
-    rewritten = [line.rstrip("\n").replace(delimiter, "\t") + "\n" for line in lines]
-    with open(tsv_path, "w", encoding="utf-8") as fh:
-        fh.writelines(rewritten)
-
-    warnings.append(
-        f"fix_single_column_tsv: rewrote {tsv_path.name} replacing "
-        f"'{delimiter}' with tabs (auto-fix)."
-    )
-    return warnings
-
-
-def dedup_participant_ids(tsv_path: Path) -> list[str]:
-    """Remove duplicate participant_id rows from a TSV."""
-    warnings: list[str] = []
-    if not tsv_path.exists():
-        return warnings
-
-    with open(tsv_path, "r", encoding="utf-8", newline="") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        fieldnames = reader.fieldnames or []
-        rows = list(reader)
-
-    id_col = "participant_id"
-    if id_col not in fieldnames:
-        return warnings
-
-    seen: set[str] = set()
-    kept: list[dict[str, str]] = []
-    for row in rows:
-        pid = row.get(id_col, "").strip()
-        if pid in seen:
-            warnings.append(
-                f"dedup_participant_ids: dropped duplicate participant_id '{pid}'."
-            )
-        else:
-            seen.add(pid)
-            kept.append(row)
-
-    if len(kept) == len(rows):
-        return warnings
-
-    with open(tsv_path, "w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(
-            fh, fieldnames=fieldnames, delimiter="\t", lineterminator="\n"
-        )
-        writer.writeheader()
-        writer.writerows(kept)
-
-    return warnings
-
-
-def fill_empty_id_rows(tsv_path: Path) -> list[str]:
-    """Remove rows where participant_id is empty or whitespace-only."""
-    warnings: list[str] = []
-    if not tsv_path.exists():
-        return warnings
-
-    with open(tsv_path, "r", encoding="utf-8", newline="") as fh:
-        reader = csv.DictReader(fh, delimiter="\t")
-        fieldnames = reader.fieldnames or []
-        rows = list(reader)
-
-    id_col = "participant_id"
-    if id_col not in fieldnames:
-        return warnings
-
-    kept: list[dict[str, str]] = []
-    dropped = 0
-    for row in rows:
-        pid = row.get(id_col, "").strip()
-        if not pid:
-            dropped += 1
-        else:
-            kept.append(row)
-
-    if dropped == 0:
-        return warnings
-
-    with open(tsv_path, "w", encoding="utf-8", newline="") as fh:
-        writer = csv.DictWriter(
-            fh, fieldnames=fieldnames, delimiter="\t", lineterminator="\n"
-        )
-        writer.writeheader()
-        writer.writerows(kept)
-
-    warnings.append(
-        f"fill_empty_id_rows: removed {dropped} row(s) with empty participant_id "
-        f"from {tsv_path.name} (auto-fix)."
-    )
-    return warnings
 
 
 __all__ = [

@@ -16,11 +16,13 @@ def test_provider_preparation_hooks_are_ordered(tmp_path):
     manager = ProviderManager()
     extracted = tmp_path / "extracted"
     prepared = tmp_path / "bids"
+
     with (
         patch.object(manager, "unpack", return_value=extracted) as unpack,
         patch.object(manager, "prepare", return_value=prepared) as prepare,
     ):
         assert manager.prepare_fetched(tmp_path) == prepared
+
     unpack.assert_called_once_with(tmp_path)
     prepare.assert_called_once_with(extracted)
 
@@ -28,6 +30,7 @@ def test_provider_preparation_hooks_are_ordered(tmp_path):
 def test_provider_default_hooks_prepare_an_archive(tmp_path):
     with zipfile.ZipFile(tmp_path / "rawdata.zip", "w") as archive:
         archive.writestr("rawdata/sub-01/anat/sub-01_T1w.nii.gz", b"image")
+
     assert ProviderManager().prepare_fetched(tmp_path) == tmp_path
     assert (tmp_path / "sub-01/anat/sub-01_T1w.nii.gz").read_bytes() == b"image"
     assert (tmp_path / "participants.tsv").exists()
@@ -49,6 +52,7 @@ def test_unpack_tar_variants(tmp_path, suffix, mode):
         member = tarfile.TarInfo("dataset/participants.tsv")
         member.size = len(b"data")
         archive.addfile(member, io.BytesIO(b"data"))
+
     assert unpack_provider_archives(tmp_path) == tmp_path
     assert (tmp_path / "dataset/participants.tsv").read_bytes() == b"data"
     assert not archive_path.exists()
@@ -63,7 +67,9 @@ def test_zip_extracts_beside_archive_and_preserves_ordinary_files(tmp_path):
         archive.writestr("nested.zip", b"leave packed")
     ordinary = tmp_path / "README"
     ordinary.write_text("readme")
+
     unpack_provider_archives(tmp_path)
+
     assert (folder / "participants.tsv").read_bytes() == b"data"
     assert (folder / "nested.zip").read_bytes() == b"leave packed"
     assert ordinary.read_text() == "readme"
@@ -74,6 +80,7 @@ def test_single_archive_fetch_returns_parent(tmp_path):
     archive_path = tmp_path / "dataset.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("participants.tsv", b"data")
+
     assert unpack_provider_archives(archive_path) == tmp_path
     assert not archive_path.exists()
 
@@ -83,8 +90,10 @@ def test_unsafe_zip_is_retained(tmp_path, name):
     archive_path = tmp_path / "dataset.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr(name, b"data")
+
     with pytest.raises(ValueError, match="Unsafe member"):
         unpack_provider_archives(tmp_path)
+
     assert archive_path.exists()
 
 
@@ -95,16 +104,20 @@ def test_tar_links_are_rejected(tmp_path):
         member.type = tarfile.SYMTYPE
         member.linkname = "../outside"
         archive.addfile(member)
+
     with pytest.raises(ValueError, match="Unsafe member"):
         unpack_provider_archives(tmp_path)
+
     assert archive_path.exists()
 
 
 def test_corrupt_archive_is_retained(tmp_path):
     archive_path = tmp_path / "dataset.zip"
     archive_path.write_bytes(b"invalid")
+
     with pytest.raises(zipfile.BadZipFile):
         unpack_provider_archives(tmp_path)
+
     assert archive_path.exists()
 
 
@@ -112,11 +125,13 @@ def test_extraction_failure_retains_archive(tmp_path):
     archive_path = tmp_path / "dataset.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("participants.tsv", b"data")
+
     with (
         patch.object(zipfile.ZipFile, "extractall", side_effect=OSError("disk full")),
         pytest.raises(OSError, match="disk full"),
     ):
         unpack_provider_archives(tmp_path)
+
     assert archive_path.exists()
 
 
@@ -127,8 +142,10 @@ def test_zip_symlink_is_rejected(tmp_path):
         member.create_system = 3
         member.external_attr = (stat.S_IFLNK | 0o777) << 16
         archive.writestr(member, "../outside")
+
     with pytest.raises(ValueError, match="Unsafe link"):
         unpack_provider_archives(tmp_path)
+
     assert archive_path.exists()
 
 
@@ -141,8 +158,10 @@ def test_existing_symlink_cannot_redirect_extraction(tmp_path):
     archive_path = root / "dataset.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("dataset/participants.tsv", b"data")
+
     with pytest.raises(ValueError, match="Unsafe member"):
         unpack_provider_archives(root)
+
     assert archive_path.exists()
     assert not (outside / "participants.tsv").exists()
 
@@ -157,6 +176,7 @@ def test_legacy_zip_with_wrapped_32_bit_offsets(tmp_path, corrupt):
         second_offset = archive.getinfo("second.tsv").header_offset
         third_offset = archive.getinfo("third.tsv").header_offset
         central_offset = archive.start_dir
+
     data = bytearray(original.getvalue())
     physical_second = (1 << 32) - 64
     physical_third = (1 << 32) + 64
@@ -180,6 +200,7 @@ def test_legacy_zip_with_wrapped_32_bit_offsets(tmp_path, corrupt):
         if corrupt:
             stream.seek(30)
             stream.write(b"X")
+
     if corrupt:
         with pytest.raises(zipfile.BadZipFile, match="filename mismatch"):
             unpack_provider_archives(tmp_path)

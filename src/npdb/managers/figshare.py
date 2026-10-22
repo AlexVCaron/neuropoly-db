@@ -90,6 +90,7 @@ class FigshareProviderManager(ProviderManager):
             ]
         if not articles:
             raise ValueError(f"No public Figshare articles found for DOI '{doi}'.")
+
         try:
             return [article["id"] for article in articles]
         except KeyError as exc:

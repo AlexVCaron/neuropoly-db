@@ -139,16 +139,15 @@ def _status_code(exc: BaseException) -> int | None:
 
 
 def _diagnose_one(exc: BaseException) -> Diagnosis | None:
+    from bids_repair import BidsRepairError, BidsValidationError
     from npdb.annotation.preflight import PreflightError
-    from npdb.bids_repair import BidsRepairError
-    from npdb.external.bids import BidsValidationError
     from npdb.external.neurobagel.errors import BagelCLIError, classify_bagel_error
 
     if isinstance(exc, KeyboardInterrupt):
         return Diagnosis(
             "Interrupted",
             "Stopped by the user.",
-            hint="If a BIDS repair was being applied, restore the dataset with: npdb repair recover <dataset>",
+            hint="If a BIDS repair was being applied, restore the dataset with: bids-repair recover <dataset>",
             exit_code=130,
         )
     if isinstance(exc, GitCommandError):
@@ -158,11 +157,12 @@ def _diagnose_one(exc: BaseException) -> Diagnosis | None:
         )
     if isinstance(exc, NpdbError):
         return Diagnosis(exc.title, exc.message, exc.hint, exc.docs, exc.exit_code)
+
     if isinstance(exc, BidsValidationError):
         return Diagnosis(
             "BIDS validation failed",
             str(exc),
-            hint="Inspect the validation manifest above, try `npdb repair bids <dataset> --dry-run`, "
+            hint="Inspect the validation manifest above, try `bids-repair <dataset> --dry-run`, "
             "or allow more with --bids-severity-threshold.",
             docs="Development-BIDS-Repair",
         )
@@ -170,9 +170,10 @@ def _diagnose_one(exc: BaseException) -> Diagnosis | None:
         return Diagnosis(
             "BIDS repair failed",
             str(exc),
-            hint="Restore the dataset with `npdb repair recover <dataset>`, then inspect the plan with --dry-run.",
+            hint="Restore the dataset with `bids-repair recover <dataset>`, then inspect the plan with --dry-run.",
             docs="Development-BIDS-Repair#manifests-journals-and-recovery",
         )
+
     if isinstance(exc, PreflightError):
         step = exc.fix_steps[0] if exc.fix_steps else None
         hint = f"{step['action']}: {step['detail']}" if step else None
@@ -198,6 +199,7 @@ def _diagnose_one(exc: BaseException) -> Diagnosis | None:
             hint,
             "Development-Ingestion#annotation-modes",
         )
+
     code = _status_code(exc)
     if code is not None:
         if code >= 500:
@@ -205,6 +207,7 @@ def _diagnose_one(exc: BaseException) -> Diagnosis | None:
         else:
             hint = _HTTP_HINTS.get(code, "The provider rejected the request.")
         return Diagnosis(f"Provider returned HTTP {code}", str(exc), hint)
+
     text = str(exc)
     if isinstance(exc, ssl.SSLError) or "CERTIFICATE_VERIFY_FAILED" in text:
         return Diagnosis(
@@ -221,6 +224,7 @@ def _diagnose_one(exc: BaseException) -> Diagnosis | None:
             text or type(exc).__name__,
             hint="Check your internet connection; for NeuroPoly services, turn on the VPN.",
         )
+
     if isinstance(exc, json.JSONDecodeError):
         return Diagnosis(
             "Invalid JSON",
@@ -311,6 +315,7 @@ def _environment() -> list[tuple[str, str]]:
             version += f" (commit {commit[:10]})"
     except metadata.PackageNotFoundError:
         version = "not installed (source checkout)"
+
     extras = ", ".join(
         f"{extra} {'yes' if importlib.util.find_spec(module) else 'no'}"
         for extra, module in _EXTRA_MODULES.items()
@@ -338,6 +343,7 @@ def build_report(
     trace = redact("".join(lines)).rstrip()
     if max_traceback is not None and len(trace) > max_traceback:
         trace = "...\n" + trace[-max_traceback:]
+
     env = "\n".join(f"| {key} | {value} |" for key, value in _environment())
     return (
         "### Command\n\n"

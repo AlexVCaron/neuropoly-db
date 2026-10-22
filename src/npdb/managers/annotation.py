@@ -6,6 +6,7 @@ import json
 import shutil
 from pathlib import Path
 
+from bids_repair.utils import parse_tsv_columns
 from npdb.annotation import AnnotationConfig
 from npdb.annotation.annotator import Annotator
 from npdb.annotation.duplicates import resolve_phenotype_duplicates
@@ -20,7 +21,6 @@ from npdb.annotation.standardize import (
     validate_bids_sidecar,
 )
 from npdb.annotation.strategies import AnnotationStrategyFactory, AnnotatorContext
-from npdb.annotation.utils import parse_tsv_columns
 from npdb.external.neurobagel.schema import convert_to_bagel_schema
 
 
@@ -197,7 +197,7 @@ class BIDSStandardizer(Annotator):
                         print(f"  {old} → {new}")
 
             # Step 1: Normalize canonical TSV cleanup via autofix delegates
-            cleanup_warnings = normalize_participants_tsv(tsv_path)
+            cleanup_warnings = normalize_participants_tsv(tsv_path, dry_run=dry_run)
             if cleanup_warnings:
                 print("✓ Applied autofix cleanup:")
                 for warning in cleanup_warnings:

@@ -27,6 +27,7 @@ def unpack_midrc(source: Path, destination: Path) -> Path:
     staging = destination / "sourcedata" / "midrc"
     if staging.is_symlink():
         raise ValueError(f"Refusing MIDRC symlink staging directory: {staging}")
+
     archives = (
         [
             path
@@ -41,6 +42,7 @@ def unpack_midrc(source: Path, destination: Path) -> Path:
         raise ValueError(
             "MIDRC preparation requires exactly one *_structured.zip archive."
         )
+
     name = structured[0].name.removesuffix("_structured.zip")
     roles: dict[str, Path] = {}
     for archive in archives:
@@ -54,6 +56,7 @@ def unpack_midrc(source: Path, destination: Path) -> Path:
         if role in roles or not re.fullmatch(r"[A-Za-z0-9_-]+", role):
             raise ValueError(f"Conflicting or unsafe MIDRC archive role: {role}")
         roles[role] = archive
+
     if staging.exists():
         manifest_path = staging / "archives.json"
         if manifest_path.is_symlink() or not manifest_path.is_file():
@@ -75,6 +78,7 @@ def unpack_midrc(source: Path, destination: Path) -> Path:
                 f"MIDRC extraction is incomplete; use a fresh staging destination: {staging}"
             )
         return destination
+
     for role in [
         "structured",
         "imaging_files",
@@ -136,11 +140,13 @@ def prepare_metadata(
     cases = index_rows(tables.get("case", []), "submitter_id")
     if not cases:
         raise ValueError("MIDRC structured data has no case records.")
+
     labels = subject_labels(cases)
     if output.exists() or output.is_symlink():
         raise FileExistsError(f"MIDRC BIDS destination already exists: {output}")
     if any(path.is_symlink() for path in output.parents):
         raise ValueError(f"Refusing MIDRC symlink destination: {output}")
+
     output.mkdir(parents=True)
     dataset = tables.get("dataset", [{}])[0]
     write_json(
@@ -151,6 +157,7 @@ def prepare_metadata(
             "DatasetType": "raw",
         },
     )
+
     excluded = {"type", "submitter_id", "case_ids", "datasets", "datasets.submitter_id"}
     extra = sorted(
         set().union(*(row.keys() for row in cases.values()))
@@ -174,6 +181,7 @@ def prepare_metadata(
                 ),
             )
             writer.writerow(values)
+
     normalize_participants_tsv(participants)
     resolver = MappingResolver()
     sidecar = generate_participants_json(
@@ -201,6 +209,7 @@ def series_sidecar(row: dict[str, str]) -> dict[str, Any]:
     }.items():
         if row.get(source):
             metadata[target] = row[source]
+
     for source, target, scale in (
         ("echo_time", "EchoTime", 0.001),
         ("repetition_time", "RepetitionTime", 0.001),
@@ -222,6 +231,7 @@ def series_sidecar(row: dict[str, str]) -> dict[str, Any]:
 def acquisition_suffix(row: dict[str, str]) -> str:
     if row.get("modality", "MR") != "MR":
         raise ValueError("Only structural MR conversion is currently supported.")
+
     description = row.get("series_description", "").lower()
     if re.search(r"\bflair\b", description):
         return "FLAIR"
@@ -248,6 +258,7 @@ def image_identities(
         for row in rows
     ]
     series = index_rows(series_rows, "series_uid")
+
     annotations: dict[str, set[tuple[str, str, str]]] = {}
     invalid_annotations: set[str] = set()
     pattern = re.compile(
@@ -276,6 +287,7 @@ def image_identities(
             annotations.setdefault(
                 row.get("mr_series_files.submitter_id", ""), set()
             ).add((case, modality + session, run))
+
     identities: dict[str, dict[str, Any]] = {}
     rejected: list[dict[str, str]] = []
     study_order = {uid: str(number) for number, uid in enumerate(sorted(studies), 1)}
@@ -332,6 +344,7 @@ def convert_dicom(source: Path, output: Path) -> list[Path]:
     executable = shutil.which("dcm2niix")
     if executable is None:
         raise RuntimeError("MIDRC DICOM preparation requires dcm2niix on PATH.")
+
     output.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
         [
@@ -356,6 +369,7 @@ def convert_dicom(source: Path, output: Path) -> list[Path]:
         raise RuntimeError(
             f"dcm2niix failed for {source}: {result.stderr or result.stdout}"
         )
+
     images = sorted(output.glob("*.nii.gz"))
     if not images:
         raise RuntimeError(f"dcm2niix produced no NIfTI images for {source}.")
@@ -372,6 +386,7 @@ def prepare_imaging(
         return report
     if shutil.which("dcm2niix") is None:
         raise RuntimeError("MIDRC DICOM preparation requires dcm2niix on PATH.")
+
     archives = list(imaging.rglob("*.zip"))
     dicoms = list(imaging.rglob("*.dcm"))
     handled: set[Path] = set()
@@ -405,6 +420,7 @@ def prepare_imaging(
                 raise ValueError(
                     f"DICOM header disagrees with MIDRC series/study metadata: {uid}"
                 )
+
         images = convert_dicom(source, staging / "work" / "converted" / uid)
         pending: list[tuple[Path, Path, dict[str, Any]]] = []
         for image in images:
@@ -433,6 +449,7 @@ def prepare_imaging(
                 / f"{entities}_{identity['suffix']}.nii.gz"
             )
             pending.append((image, destination, metadata))
+
         if len({str(item[1]) for item in pending}) != len(pending):
             report["quarantine"].append(
                 {
@@ -441,6 +458,7 @@ def prepare_imaging(
                 }
             )
             continue
+
         paths = []
         for image, destination, metadata in pending:
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -461,6 +479,7 @@ def prepare_imaging(
             )
             paths.append(destination.relative_to(output).as_posix())
         report["images"][uid] = paths
+
     for path in set(archives + dicoms) - handled:
         report["quarantine"].append(
             {
@@ -468,6 +487,7 @@ def prepare_imaging(
                 "reason": "Unmapped imaging payload; retained in sourcedata.",
             }
         )
+
     write_json(staging / "conversion_report.json", report)
     if not report["images"]:
         raise ValueError(
@@ -488,6 +508,7 @@ def prepare_derivatives(
     annotations = index_rows(tables.get("annotation_file", []), "file_name")
     manifest = json.loads((staging / "archives.json").read_text(encoding="utf-8"))
     report["derivatives"] = {}
+
     for role in sorted(set(manifest["Roles"]) - {"structured", "imaging_files"}):
         source_root = staging / role
         derivative = output / "derivatives" / role
@@ -510,6 +531,7 @@ def prepare_derivatives(
                     }
                 )
                 continue
+
             raw = output / raw_paths[0]
             case = record.get("cases.submitter_id") or record.get("case_ids", "")
             if (
@@ -524,6 +546,7 @@ def prepare_derivatives(
                     }
                 )
                 continue
+
             stem = raw.name.removesuffix(".nii.gz")
             entities, suffix = stem.rsplit("_", 1)
             metadata = json.loads(
@@ -573,6 +596,7 @@ def prepare_derivatives(
                         )
                         continue
                     metadata["SkullStripped"] = False
+
             extension = ".nii.gz" if image.name.endswith(".nii.gz") else ".nii"
             destination = (
                 derivative / raw.relative_to(output).parent / (stem + extension)
@@ -623,5 +647,6 @@ def prepare_derivatives(
                         "reason": "Unsupported derivative file format; retained in sourcedata.",
                     }
                 )
+
     report_path = staging / "derivative_report.json"
     write_json(report_path, report)

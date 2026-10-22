@@ -5,8 +5,8 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
+from bids_repair.validation import BidsSeverity, validate_and_repair_bids_dataset
 from npdb.annotation.preflight import PreflightError, check_bids_suffixes
-from npdb.external.bids import BidsSeverity, validate_and_repair_bids_dataset
 from npdb.external.neurobagel.errors import BagelCLIError
 from npdb.external.neurodata.gitea import GiteaManager
 from npdb.managers.model import NeurobagelManager

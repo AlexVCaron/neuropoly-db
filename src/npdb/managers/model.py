@@ -28,6 +28,7 @@ def default_download_cache(cache_dir: str | Path | None = None) -> Path:
     configured = cache_dir or os.environ.get("NP_NPDB_CACHE_DIR")
     if configured:
         return Path(configured)
+
     cache_home = os.environ.get("XDG_CACHE_HOME")
     return (
         (Path(cache_home) if cache_home else Path.home() / ".cache")
@@ -114,7 +115,7 @@ class ProviderManager(Manager):
                     "A cache directory is required for this provider. "
                     "Pass --cache-dir or set NP_NPDB_CACHE_DIR. "
                     "This download may be large.",
-                    hint="npdb ... --cache-dir \"$HOME/.cache/npdb-downloads\"",
+                    hint='npdb ... --cache-dir "$HOME/.cache/npdb-downloads"',
                     docs="Development-Provider-Framework#shared-cache-rule",
                 )
             self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -130,10 +131,7 @@ class ProviderManager(Manager):
         return unpack_provider_archives(fetched)
 
     def prepare(self, root: str | Path) -> Path:
-        from npdb.managers.preparation import (
-            find_dataset_root,
-            prepare_provider_dataset,
-        )
+        from bids_repair.dataset import find_dataset_root, prepare_provider_dataset
 
         return prepare_provider_dataset(find_dataset_root(Path(root)))
 
@@ -363,7 +361,9 @@ class GitManager(Manager):
 
         if cmd and cmd[0] == "git":
             require_executable(
-                "git", feature="Git downloads", hint="Install git: https://git-scm.com/downloads"
+                "git",
+                feature="Git downloads",
+                hint="Install git: https://git-scm.com/downloads",
             )
             if "annex" in cmd[1:4]:
                 require_executable(
