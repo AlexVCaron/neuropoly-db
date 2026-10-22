@@ -5,11 +5,12 @@ build-backend = "uv_build"
 [project]
 name = "npdb"
 version = "0.1.0"
-description = "NeuroPoly database tooling and managers"
+description = "NeuroPoly database management and BIDS repairing tools."
 requires-python = ">=3.12"
 dependencies = [
   "bagel==0.11.4",
   "pybids>=0.16",
+  "bidsschematools>=1.2,<2",
   "pydicom>=2.4",
   "jupyter",
   "ipywidgets",
@@ -62,6 +63,17 @@ full = [
 
 [project.scripts]
 npdb = "npdb.cli.cli:run"
+bids-repair = "bids_repair.cli:run"
+
+[tool.uv.build-backend]
+module-name = ["npdb", "bids_repair"]
+source-include = [
+  "tools/bids-validator-rust/Cargo.toml",
+  "tools/bids-validator-rust/Cargo.lock",
+  "tools/bids-validator-rust/src/**",
+  "scripts/install_bids_validator.sh",
+  "docs/bids-repair.md",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -70,7 +82,33 @@ testpaths = ["test"]
 
 [dependency-groups]
 dev = [
+  "black>=26.10,<27",
   "isort>=8.0.1",
   "pytest>=9.0.2",
   "pytest-asyncio>=1.3.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+include = '^/(src|test)/.*\.py$'
+force-exclude = '''
+(
+  ^/(?!(src|test)(/|$))
+  | /(fixtures|data|vendor|vendored|generated|__pycache__|snapshots)/
+)
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+src_paths = ["src"]
+filter_files = true
+extend_skip = [
+  ".devcontainer", ".github", ".venv", "config", "data", "docs", "scripts", "tools", "tmp",
+  "wiki", "neurobagel-recipes", "seed-datasets",
+]
+extend_skip_glob = [
+  "*/fixtures/*", "*/data/*", "*/vendor/*", "*/vendored/*",
+  "*/generated/*", "*/snapshots/*",
 ]
