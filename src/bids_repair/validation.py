@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 import subprocess
 import sys
 from enum import Enum
@@ -8,6 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from bids_repair.bids_version import resolve_bids_version
+from bids_repair.native import (
+    COVERAGE,
+    RUST_VERSION,
+    schema_document,
+    validator_executable,
+)
 
 
 class BidsSeverity(str, Enum):
@@ -83,55 +88,165 @@ def get_bids_validation_report(
     if schema_path is not None and target_version is None:
         raise ValueError("schema_path requires target_version")
 
+    from bids_repair.paths import assert_safe_path
+    from bids_repair.target import acquire_target_schema
+
+    if target_version is not None:
+        acquire_target_schema(
+            target_version, Path(schema_path) if schema_path is not None else None
+        )
+    root = Path(dataset).resolve()
+    if not root.is_dir():
+        raise ValueError(f"Dataset is not a directory: {root}")
     executable = _validator_executable()
+    roots = [root]
+    derivatives = root / "derivatives"
+    if derivatives.is_dir():
+        assert_safe_path(root, derivatives, must_exist=True)
+        for child in sorted(derivatives.iterdir()):
+            if child.is_dir():
+                assert_safe_path(root, child, must_exist=True)
+                roots.append(child)
+    report: dict[str, Any] = {
+        "validator": f"rordenlab/bids-validator-rs {RUST_VERSION}",
+        "coverage": COVERAGE,
+        "schema_bids_version": schema_document()["bids_version"],
+        "datasets": [_native_dataset_report(executable, owner) for owner in roots],
+    }
+    for derivative in report["datasets"][1:]:
+        _check_derivative_provenance(derivative)
+    _explain_description_findings(root, report)
+    if target_version is not None:
+        report["target_bids_version"] = target_version
+    return report
+
+
+def _check_derivative_provenance(report: dict[str, Any]) -> None:
+    from bids_repair.description import read_dataset_description
+
+    owner = Path(report["dataset"])
+    try:
+        description = (
+            read_dataset_description(owner)
+            if (owner / "dataset_description.json").exists()
+            else {}
+        )
+    except (OSError, ValueError) as exc:
+        detail = f"Cannot read derivative provenance: {exc}"
+    else:
+        generators = description.get("GeneratedBy")
+        if (
+            isinstance(generators, list)
+            and generators
+            and isinstance(generators[0], dict)
+            and isinstance(generators[0].get("Name"), str)
+            and generators[0]["Name"].strip()
+        ):
+            return
+        detail = "Every derivative dataset must declare GeneratedBy[0].Name."
+    report["issues"].append(
+        {
+            "code": "DERIVATIVE_PROVENANCE",
+            "severity": "error",
+            "path": str(owner / "dataset_description.json"),
+            "message": detail,
+        }
+    )
+    report["errors"] += 1
+
+
+def _native_dataset_report(executable: str, owner: Path) -> dict[str, Any]:
     result = subprocess.run(
-        [executable, str(Path(dataset).resolve())],
+        [
+            executable,
+            str(owner),
+            "--format",
+            "json",
+            "--content-mode",
+            "parity",
+            "--link-mode",
+            "parity",
+        ],
         capture_output=True,
         text=True,
         check=False,
     )
 
     try:
-        report = json.loads(result.stdout)
+        document = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         detail = result.stdout or result.stderr or "no output"
         raise RuntimeError(
             f"Rust BIDS validator did not return a structured report: {detail}"
         ) from exc
-    if (
-        not isinstance(report, dict)
-        or not isinstance(report.get("datasets"), list)
-        or not report["datasets"]
-        or any(not isinstance(item, dict) for item in report["datasets"])
-    ):
+    if not isinstance(document, dict) or not isinstance(document.get("issues"), dict):
         raise RuntimeError(
             f"Rust BIDS validator returned an invalid report: {result.stdout}"
         )
+    envelope = document["issues"]
+    issues = envelope.get("issues")
+    messages = envelope.get("codeMessages")
+    if (
+        not isinstance(issues, list)
+        or not isinstance(messages, dict)
+        or any(not isinstance(value, str) for value in messages.values())
+    ):
+        raise RuntimeError("Rust BIDS validator returned invalid issues/codeMessages.")
 
-    errors = sum(
-        int(item.get("errors", 0))
-        for item in report["datasets"]
-        if isinstance(item.get("errors", 0), (int, float))
-    )
-    if result.returncode and errors == 0:
+    normalized = []
+    for issue in issues:
+        if (
+            not isinstance(issue, dict)
+            or not isinstance(issue.get("code"), str)
+            or not issue["code"]
+            or issue.get("severity") not in ("error", "warning")
+            or not isinstance(issue.get("location", ""), str)
+            or (
+                issue.get("issueMessage") is not None
+                and not isinstance(issue["issueMessage"], str)
+            )
+        ):
+            raise RuntimeError(
+                f"Rust BIDS validator returned an invalid issue: {issue!r}"
+            )
+        location = issue.get("location", "").lstrip("/")
+        relative = Path(location)
+        if relative.is_absolute() or ".." in relative.parts or "\\" in location:
+            raise RuntimeError(f"Unsafe Rust validator issue location: {location!r}")
+        message = messages.get(issue["code"])
+        detail = issue.get("issueMessage")
+        if detail:
+            message = f"{message}: {detail}" if message else detail
+        if not message:
+            raise RuntimeError(
+                f"Rust validator supplied no message for {issue['code']}."
+            )
+        normalized.append(
+            {
+                **issue,
+                "path": str(owner / relative),
+                "message": message,
+                "code_message": messages.get(issue["code"]),
+            }
+        )
+    errors = sum(issue["severity"] == "error" for issue in normalized)
+    if result.returncode not in (0, 1) or bool(result.returncode) != bool(errors):
         raise RuntimeError(
-            "Rust BIDS validator exited unsuccessfully without reporting validation "
-            f"errors: {result.stdout or result.stderr}"
+            "Rust BIDS validator exit status disagrees with its error findings: "
+            f"{result.returncode}: {result.stdout or result.stderr}"
         )
-
-    _explain_description_findings(Path(dataset), report)
-    if target_version is not None:
-        from bids_repair.target import add_target_findings
-
-        add_target_findings(
-            Path(dataset).resolve(), report, target_version, schema_path
-        )
-    return report
+    return {
+        "dataset": str(owner),
+        "issues": normalized,
+        "errors": errors,
+        "warnings": len(normalized) - errors,
+    }
 
 
 def _explain_description_findings(root: Path, report: dict[str, Any]) -> None:
     from bids_repair.description import inspect_dataset_description
     from bids_repair.paths import assert_safe_path
+    from bids_repair.repair import issue_repair_kind
 
     root = root.resolve()
     for dataset_report in report["datasets"]:
@@ -140,15 +255,14 @@ def _explain_description_findings(root: Path, report: dict[str, Any]) -> None:
             owner = root / owner
         assert_safe_path(root, owner, must_exist=True)
         for issue in dataset_report.get("issues", []):
-            if issue.get("code") != "INVALID_DATASET_DESCRIPTION":
+            if issue_repair_kind(issue, owner) != "description":
                 continue
 
             diagnostics = inspect_dataset_description(owner)
             issue["diagnostics"] = diagnostics
             detail = "; ".join(diagnostics["problems"]) or (
-                "JSON syntax and basic field checks passed; the structural "
-                "validator still rejects this description. This is not a full "
-                "schema compliance check."
+                "JSON syntax and basic field checks passed; the native "
+                "validator still reports a description issue."
             )
             issue["message"] = f"{issue['message']}: {detail}"
 
@@ -392,11 +506,10 @@ def _remaining_findings(
                 )
             remaining.append(finding)
 
+    from bids_repair.repair import issue_repair_kind
+
     for finding in candidates:
-        if finding.get("code") not in {
-            "INVALID_DATASET_DESCRIPTION",
-            "INVALID_FILENAME",
-        }:
+        if issue_repair_kind(finding) is None:
             remaining.append(finding)
 
     deduplicated = {
@@ -447,14 +560,4 @@ def _issue_key(finding: dict[str, Any]) -> tuple[str, str, str]:
 
 
 def _validator_executable() -> str:
-    executable = shutil.which("bids-validator-rust")
-    if executable is None:
-        candidate = Path(sys.executable).parent / "bids-validator-rust"
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            executable = str(candidate)
-    if executable is None:
-        raise RuntimeError(
-            "The Rust BIDS validator is required. Run "
-            "bash scripts/install_bids_validator.sh after installing Rust 1.85+."
-        )
-    return executable
+    return validator_executable()

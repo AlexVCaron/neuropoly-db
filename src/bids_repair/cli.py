@@ -125,7 +125,7 @@ def main() -> None:
 
     bids-repair DATASET plans only; add --apply to write safe repairs.
     Use --bids-version VERSION or the dataset's BIDSVersion; otherwise asks.
-    Missing exact-version schemas are downloaded and cached automatically.
+    The native beta supports its pinned bundled BIDS schema only.
     Use bids-repair DATASET --help for repair options.
     Provider access and source conversion belong to npdb, not this command.
     """

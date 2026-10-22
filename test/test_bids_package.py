@@ -8,11 +8,10 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import httpx
+import nibabel as nib
+import numpy as np
 import pytest
 import typer
-from bidsschematools import data
-from bidsschematools.schema import load_schema
 from typer.main import get_command
 from typer.testing import CliRunner
 from typer.testing import CliRunner as NpdbRunner
@@ -24,6 +23,7 @@ from bids_repair import (
     validate_and_repair_bids_dataset,
 )
 from bids_repair.cli import app
+from bids_repair.native import bundled_schema_path, schema_document
 from bids_repair.tables import (
     apply_header_map,
     fix_single_column_tsv,
@@ -32,7 +32,7 @@ from bids_repair.tables import (
 from bids_repair.target import target_schema
 from npdb.cli.cli import npdb
 
-VERSION = load_schema().bids_version
+VERSION = schema_document()["bids_version"]
 runner = CliRunner()
 
 
@@ -51,9 +51,12 @@ def dataset(tmp_path):
     (root / "participants.tsv").write_text(
         "participant_id\tcustom_measure\nsub-01\t3\n"
     )
+    (root / "participants.json").write_text(
+        json.dumps({"custom_measure": {"Description": "Fixture measurement"}})
+    )
     image = root / "sub-01" / "anat" / "sub-01_T1w.nii.gz"
     image.parent.mkdir(parents=True)
-    image.write_bytes(b"Not a semantic image test")
+    nib.save(nib.Nifti1Image(np.zeros((4, 4, 4)), np.eye(4)), image)
     return root
 
 
@@ -76,7 +79,9 @@ def test_default_plan_and_validate_are_read_only_and_versioned(dataset):
         assert result.exit_code == 0, result.output
         payload = json.loads(result.stdout)
         assert payload["target_bids_version"] == VERSION
-        assert "not full sidecar" in payload["coverage"]
+        assert "beta" in payload["coverage"]
+        assert "metadata" in payload["coverage"]
+        assert "NIfTI" in payload["coverage"]
         assert snapshot(dataset) == before
 
 
@@ -91,7 +96,7 @@ def test_schema_findings_use_requested_schema_not_declared_version(dataset):
 
     assert report["target_bids_version"] == VERSION
     assert any(
-        issue.get("path") == str(invalid) and f"BIDS {VERSION}" in issue["message"]
+        issue.get("path") == str(invalid) and issue["severity"] == "error"
         for item in report["datasets"]
         for issue in item["issues"]
     )
@@ -129,30 +134,21 @@ def test_real_schema_findings_do_not_flood_human_apply_output(dataset):
 def test_unsupported_version_fails_without_changing_dataset(dataset):
     before = snapshot(dataset)
 
-    with patch(
-        "bids_repair.target.httpx.get",
-        return_value=httpx.Response(
-            404,
-            request=httpx.Request("GET", "https://bids-specification.readthedocs.io"),
-        ),
-    ):
-        result = runner.invoke(
-            app, [str(dataset), "--apply", "--bids-version", "0.0.0"]
-        )
+    result = runner.invoke(app, [str(dataset), "--apply", "--bids-version", "0.0.0"])
 
     assert result.exit_code == 1
-    assert "No published schema" in " ".join(result.output.split())
-    assert "--schema" in result.output
+    assert "Unsupported target" in " ".join(result.output.split())
+    assert "cannot retarget" in " ".join(result.output.split())
     assert snapshot(dataset) == before
 
 
 def test_local_matching_schema_is_used_without_fallback(dataset, tmp_path):
     schema = tmp_path / "schema.json"
-    schema.write_text(data.load.readable("schema.json").read_text())
+    schema.write_text(bundled_schema_path().read_text())
 
     with target_schema(VERSION, schema) as selected:
         assert selected == schema
-    with pytest.raises(ValueError, match="not requested"):
+    with pytest.raises(ValueError, match="Unsupported target"):
         with target_schema("0.0.0", schema):
             pytest.fail("Mismatched schema must not be selected")
     report = get_bids_validation_report(

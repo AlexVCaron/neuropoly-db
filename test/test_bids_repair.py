@@ -373,12 +373,12 @@ def test_validator_report_survives_nonzero_exit_but_standalone_validator_stays_s
             "message": "invalid description",
         },
     )
-    completed = Mock(returncode=1, stdout=json.dumps(report), stderr="")
     with (
+        patch("npdb.external.bids._validator_executable", return_value="validator"),
         patch(
-            "npdb.external.bids.shutil.which", return_value="/tools/bids-validator-rust"
+            "npdb.external.bids._native_dataset_report",
+            return_value=report["datasets"][0],
         ),
-        patch("npdb.external.bids.subprocess.run", return_value=completed),
     ):
         inspected = get_bids_validation_report(tmp_path)
         assert inspected["datasets"][0]["errors"] == 1
@@ -387,10 +387,11 @@ def test_validator_report_survives_nonzero_exit_but_standalone_validator_stays_s
         assert issue["diagnostics"]["json_valid"] is False
         assert "missing or unsafe" in issue["message"]
     with (
+        patch("npdb.external.bids._validator_executable", return_value="validator"),
         patch(
-            "npdb.external.bids.shutil.which", return_value="/tools/bids-validator-rust"
+            "npdb.external.bids._native_dataset_report",
+            return_value=report["datasets"][0],
         ),
-        patch("npdb.external.bids.subprocess.run", return_value=completed),
         pytest.raises(RuntimeError, match="validation failed"),
     ):
         validate_bids_dataset(tmp_path)
@@ -688,17 +689,7 @@ def test_manifest_refuses_symlink_output_directory(tmp_path):
 
 
 def _run_real_validator(root: Path) -> dict:
-    from npdb.external.bids import _validator_executable
-
-    result = bids_module.subprocess.run(
-        [_validator_executable(), str(root.resolve())],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    report = json.loads(result.stdout)
-    assert result.returncode in (0, 1)
-    return report
+    return get_bids_validation_report(root)
 
 
 def _make_validator_dataset(root: Path, *, version: bool = True) -> None:
@@ -717,7 +708,15 @@ def _write_invalid_run_file(root: Path) -> Path:
     func = root / "sub-01" / "func"
     func.mkdir(exist_ok=True)
     path = func / "sub-01_task-rest_run2_bold.nii.gz"
-    path.write_bytes(b"fixture image bytes; structural validation only")
+    import nibabel as nib
+    import numpy as np
+
+    image = nib.Nifti1Image(np.zeros((2, 2, 2, 2), dtype=np.float32), np.eye(4))
+    image.header.set_zooms((1, 1, 1, 2))
+    nib.save(image, path)
+    path.with_name(path.name.removesuffix(".nii.gz") + ".json").write_text(
+        json.dumps({"TaskName": "rest", "RepetitionTime": 2})
+    )
     return path
 
 
@@ -735,22 +734,20 @@ def test_real_validator_confirms_description_and_filename_repairs(
     )
 
     original_report = _run_real_validator(root)
+    from bids_repair.repair import issue_repair_kind
+
     original_issues = original_report["datasets"][0]["issues"]
     if repair_kind == "description":
-        assert any(
-            item["code"] == "INVALID_DATASET_DESCRIPTION" for item in original_issues
-        )
+        assert any(issue_repair_kind(item) == "description" for item in original_issues)
     elif repair_kind == "filename":
         assert any(
-            item["code"] == "INVALID_FILENAME" and "run2_bold" in item["path"]
+            issue_repair_kind(item) == "filename" and "run2_bold" in item["path"]
             for item in original_issues
         )
     else:
+        assert any(issue_repair_kind(item) == "description" for item in original_issues)
         assert any(
-            item["code"] == "INVALID_DATASET_DESCRIPTION" for item in original_issues
-        )
-        assert any(
-            item["code"] == "INVALID_FILENAME" and "run2_bold" in item["path"]
+            issue_repair_kind(item) == "filename" and "run2_bold" in item["path"]
             for item in original_issues
         )
 
