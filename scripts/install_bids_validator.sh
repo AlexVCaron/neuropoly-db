@@ -3,23 +3,23 @@ set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 prefix=${1:-${VIRTUAL_ENV:-$root/.venv}}
-expected='bids-validator-rust 0.0.3 (bids-validate 0.0.3)'
+python=${PYTHON:-python3}
+expected='bids-validator 2.4.1 commit 94ea971 rust 0.1.20260517'
+commit='rust git commit b5c11828e104be88034ecccbe220ad1a20c72dfe'
 
-for executable in "$prefix/bin/bids-validator-rust" "$(command -v bids-validator-rust || true)" /usr/local/bin/bids-validator-rust; do
-    if [[ -x "$executable" ]] && [[ "$("$executable" --version 2>/dev/null)" == "$expected" ]]; then
-        if [[ "$executable" != "$prefix/bin/bids-validator-rust" ]]; then
-            mkdir -p "$prefix/bin"
-            install -m 755 "$executable" "$prefix/bin/bids-validator-rust"
+for executable in "$prefix/bin/bids-validator" "$(command -v bids-validator || true)" /usr/local/bin/bids-validator; do
+    if [[ -x "$executable" ]]; then
+        version=$("$executable" --version)
+        if [[ "$version" == "$expected"$'\n'* ]] && grep -Fxq "$commit" <<< "$version"; then
+            if [[ "$executable" != "$prefix/bin/bids-validator" ]]; then
+                mkdir -p "$prefix/bin"
+                install -m 755 "$executable" "$prefix/bin/bids-validator"
+            fi
+            printf 'Pinned Rust validator already installed: %s\n' "$executable"
+            exit 0
         fi
-        printf 'Rust BIDS validator already installed: %s\n' "$executable"
-        exit 0
     fi
 done
 
-if ! command -v cargo >/dev/null 2>&1; then
-    printf 'Install Rust 1.85+ with Cargo before running this script.\n' >&2
-    exit 1
-fi
-
-cargo install --locked --path "$root/tools/bids-validator-rust" --root "$prefix" --force
-"$prefix/bin/bids-validator-rust" --version
+"$python" "$root/tools/build_validator.py" --output "$prefix/bin"
+"$prefix/bin/bids-validator" --version

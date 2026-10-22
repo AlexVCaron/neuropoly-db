@@ -12,5 +12,8 @@ wg0.conf
 
 *.pyc
 __pycache__/
+build/
+dist/
+tools/bids-validator-rust/target/
 
 npdb-error*

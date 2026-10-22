@@ -1,10 +1,12 @@
 **
 !tools/
 !tools/bids-validator-rust/
-!tools/bids-validator-rust/Cargo.toml
-!tools/bids-validator-rust/Cargo.lock
-!tools/bids-validator-rust/src/
-!tools/bids-validator-rust/src/main.rs
+!tools/bids-validator-rust/**
+tools/bids-validator-rust/target/
+tools/bids-validator-rust/.git
+!tools/build_validator.py
+!tools/bids-validator-source.json
+!tools/bids-schema-NOTICE
 !.devcontainer/
 !.devcontainer/Dockerfile
 !.devcontainer/Dockerfile.dockerignore

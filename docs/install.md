@@ -30,9 +30,16 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## 3. Install npdb
 
+Initialize the pinned validator source before building:
+
 ```bash
-uv tool install "npdb[all] @ git+https://github.com/neuropoly/neuropoly-db"
+git submodule update --init --recursive -- tools/bids-validator-rust
+uv build
 ```
+
+Published npdb sdists contain the Rust source and do not require submodule
+initialization. GitHub-generated source ZIP/tar archives omit it and are not
+standalone build inputs.
 
 ## 4. Check it works
 
