@@ -38,9 +38,13 @@ uv tool install "npdb[all] @ git+https://github.com/neuropoly/neuropoly-db"
 
 ```bash
 npdb --help
+bids-repair --help
 ```
 
 You should see the list of `npdb` commands.
+
+The same installation also provides `bids-repair` for local BIDS validation and
+repair. See the [BIDS repair guide](bids-repair.md) for native-validator setup and target versions.
 
 > [!TIP]
 > `npdb: command not found`? Run `uv tool update-shell`, then close and reopen your terminal.
