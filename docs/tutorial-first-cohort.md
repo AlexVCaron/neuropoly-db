@@ -7,7 +7,7 @@ Before you start, complete [Get access](get-access.md) and [Install npdb](instal
 ## 1. Search
 
 1. Connect to the VPN (off campus).
-2. Open <https://data.neuro.polymtl.ca/bagel>.
+2. Open [https://data.neuro.polymtl.ca/bagel](https://data.neuro.polymtl.ca/bagel).
 3. Set **Sex** to `female` and **Imaging modality** to `T2-weighted image`.
 4. Click **Submit Query**.
 
@@ -29,15 +29,18 @@ Open `females-t2w.tsv` in Excel or LibreOffice. You should only see the two data
 
 ## 4. Download
 
+Download only raw scans, without processed files:
+
 ```bash
 cd ~/neuropoly-data
-npdb download --no-verify-ssl females-t2w.tsv -o females-t2w
+npdb download --no-derivatives females-t2w.tsv -o females-t2w
 ```
 
-Downloading only raw scans, without processed files:
+Or include derivatives:
 
 ```bash
-npdb download --no-verify-ssl --no-derivatives females-t2w.tsv -o females-t2w
+cd ~/neuropoly-data
+npdb download females-t2w.tsv -o females-t2w
 ```
 
 ## 5. Check what you got

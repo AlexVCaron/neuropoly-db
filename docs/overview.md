@@ -34,9 +34,7 @@ flowchart LR
 - Be a member of the **[neuropoly GitHub organization](https://github.com/neuropoly)** (to open Neurobagel).
 - A **NeuroData account** (to download using `npdb`).
 
-Setting these up is a one-time job: [Get access](get-access.md).
-
-## Next steps
+## What to do now
 
 1. [Get access](get-access.md)
 2. [Install npdb](install.md)

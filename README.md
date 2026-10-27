@@ -12,11 +12,7 @@ New here? Read **[What&#39;s available to you](docs/overview.md)** first.
 ## Get started
 
 1. **[Get access](docs/get-access.md)**: VPN, GitHub organization, NeuroData account and token. One-time setup.
-2. **[Install npdb](docs/install.md)**: one command with [uv](https://docs.astral.sh/uv/):
-
-   ```bash
-   uv tool install "npdb[all] @ git+https://github.com/neuropoly/neuropoly-db"
-   ```
+2. **[Install npdb](docs/install.md)**: follow the complete procedure, including system dependencies and build tools.
 3. **[Find data](docs/find-data.md)** on Neurobagel: [https://data.neuro.polymtl.ca/bagel](https://data.neuro.polymtl.ca/bagel).
 4. **[Download data](docs/download-data.md)**:
 
