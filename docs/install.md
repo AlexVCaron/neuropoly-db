@@ -1,66 +1,108 @@
 # Install npdb
 
-Two commands, no Python knowledge needed. Works on Linux and macOS (on Windows, use [WSL](https://learn.microsoft.com/windows/wsl/install)).
+This procedure installs `npdb[all]` commands from a GitHub
+checkout.
 
-## 1. Install the tools npdb relies on
+- Network access is required to download the source,
+toolchains, and dependencies.
+- Provider credentials
+and access are configured separately: see [Get access](get-access.md).
 
-`npdb` downloads with **git** and **git-annex**.
+The commands below cover Ubuntu/Debian and macOS. For Windows, use an Ubuntu environment under
+[WSL](https://learn.microsoft.com/windows/wsl/install) and follow the Ubuntu
+steps. If installation fails, [open an issue](https://github.com/neuropoly/neuropoly-db/issues/new/choose)
+with the failing command and error output.
 
-- **Ubuntu/Debian:**
+## 1. Install system dependencies
 
-  ```bash
-  sudo apt-get install -y git git-annex
-  ```
+### Ubuntu/Debian
 
-- **macOS** (with [Homebrew](https://brew.sh)):
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl build-essential git git-annex
+```
 
-  ```bash
-  brew install git git-annex
-  ```
+### macOS
+
+With [Homebrew](https://brew.sh) installed,
+install git and git-annex:
+
+```bash
+brew install git git-annex
+```
 
 ## 2. Install uv
 
-[uv](https://docs.astral.sh/uv/) installs `npdb` and the right Python for you.
-
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://astral.sh/uv/install.sh -o install-uv.sh
+sh install-uv.sh
+rm install-uv.sh
 ```
 
-**Close and reopen your terminal** afterwards.
-
-## 3. Install npdb
-
-Initialize the pinned validator source before building:
+**Close and reopen your terminal**, then check:
 
 ```bash
+uv --version
+```
+
+## 3. Install Rust and Cargo
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf https://sh.rustup.rs -o install-rust.sh
+sh install-rust.sh -y --profile minimal --default-toolchain 1.90.0
+rm install-rust.sh
+```
+
+**Close and reopen your terminal**, then check both tools:
+
+```bash
+rustc --version
+cargo --version
+```
+
+## 4. Get the source and install npdb
+
+From a directory where you want to keep the source checkout:
+
+```bash
+git clone https://github.com/neuropoly/neuropoly-db.git
+cd neuropoly-db
 git submodule update --init --recursive -- tools/bids-validator-rust
-uv build
+uv tool install --python 3.12 ".[all]"
 ```
 
-Published npdb sdists contain the Rust source and do not require submodule
-initialization. GitHub-generated source ZIP/tar archives omit it and are not
-standalone build inputs.
-
-## 4. Check it works
+## 5. Check the installation
 
 ```bash
+git --version
+git annex version
 npdb --help
 bids-repair --help
 ```
 
-You should see the list of `npdb` commands.
-
-The same installation also provides `bids-repair` for local BIDS validation and
-repair. See the [BIDS repair guide](bids-repair.md) for native-validator setup and target versions.
+The first two commands should print version information; the last two should
+print their respective command help. These are local installation checks, not a
+test of credentials, server access, or a dataset download.
 
 > [!TIP]
-> `npdb: command not found`? Run `uv tool update-shell`, then close and reopen your terminal.
+> If `npdb` or `bids-repair` is not found, run `uv tool update-shell`, then close
+> and reopen your terminal and repeat the checks.
 
 ## Update or remove
 
+To update this source-based installation, return to the GitHub checkout created
+in step 4, then run:
+
 ```bash
-uv tool upgrade npdb      # get the latest version
-uv tool uninstall npdb    # remove it
+git pull --ff-only
+git submodule update --init --recursive -- tools/bids-validator-rust
+uv tool install --reinstall --python 3.12 ".[all]"
+```
+
+To remove the uv-managed npdb installation and its command entry points:
+
+```bash
+uv tool uninstall npdb
 ```
 
 Next: [Find data](find-data.md)

@@ -4,18 +4,8 @@
 
 ## Install
 
-Use the [normal installation](install.md). Then validate the `bids-repair` command is available:
-
-```Shell
-bids-repair --help
-```
-
-Source/editable installations require Rust 1.90+ with Cargo. From a checkout:
-
-```Shell
-git submodule update --init --recursive -- tools/bids-validator-rust
-bash scripts/install_bids_validator.sh
-```
+Follow the [installation guide](install.md) to install npdb and `bids-repair`,
+including system dependencies, the Rust toolchain, and the bundled validator.
 
 ## Plan, validate, apply, recover
 
@@ -54,9 +44,6 @@ Historical/custom schemas cannot retarget the native engine, and are no longer
 downloaded automatically. `--bids-version latest` still performs a network lookup
 and fails if the resulting version is unsupported.
 
-See [offline wheel installation](install.md#offline-installation) to pre-stage
-all Python dependencies as well as npdb.
-
 ### Repair controls and safety
 
 | Argument                                         | Description                                                                                                                                                                                              |
@@ -74,7 +61,7 @@ bids-repair standardize ./my-bids --bids-version 1.11.1 \
   --header-map headers.json --column-metadata columns.json --dry-run
 ```
 
-- Header maps accept arbitrary desired BIDS column names and will convert all matched `aliases` to them:
+- `--header-map` accept arbitrary desired BIDS column names and will convert all matched `aliases` to them:
 
   ```json
   {
@@ -82,7 +69,7 @@ bids-repair standardize ./my-bids --bids-version 1.11.1 \
     "measurement": {"aliases": ["LocalMeasure"]}
   }
   ```
-- Column metadata supplies plain BIDS sidecar entries used to fill the `participants.json` schema file:
+- `--column-metadata` supplies plain BIDS sidecar entries used to fill the `participants.json` schema file:
 
   ```json
   {

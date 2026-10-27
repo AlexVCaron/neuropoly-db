@@ -1,6 +1,6 @@
 # Download data
 
-`npdb download` reads your [results file](find-data.md) and downloads only those subjects.
+`npdb download` reads your [results file](find-data.md) you obtained from your Neurobagel query and downloads only those subjects.
 
 ## Before you start
 
@@ -14,13 +14,10 @@ Go to your data folder and run:
 
 ```bash
 cd ~/neuropoly-data
-npdb download --no-verify-ssl results.tsv -o my-cohort
+npdb download results.tsv -o my-cohort
 ```
 
 Replace `results.tsv` with the name of your results file, and `my-cohort` with the folder to download into.
-
-> [!IMPORTANT]
-> `--no-verify-ssl` is **required** for now: the NeuroData server certificate is not yet recognized by default. This is safe because NeuroData is only reachable through the VPN.
 
 ## What you get
 
@@ -39,20 +36,20 @@ my-cohort/
 
 ## Useful options
 
-| Option | What it does |
-|--------|--------------|
-| `-o <folder>` | Where to save the data (default: the current folder). |
-| `--no-derivatives` | Skip processed files, download raw data only. |
-| `-v` | Show more details while downloading. |
+| Option               | What it does                                          |
+| -------------------- | ----------------------------------------------------- |
+| `-o <folder>`      | Where to save the data (default: the current folder). |
+| `--no-derivatives` | Skip processed files, download raw data only.         |
+| `-v`               | Show more details while downloading.                  |
 
 ## If it fails
 
-| Message | What to do |
-|---------|------------|
+| Message                                                      | What to do                                                                                                                       |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
 | `Missing required environment variables: NP_GITEA_APP_...` | You're not in the folder with your `.env`, or it's incomplete. See [Get access, step 5](get-access.md#5-save-your-credentials). |
-| Authentication / `401` / `403` errors | Your token is wrong or expired: [create a new one](get-access.md#4-create-a-download-token). |
-| Connection timeouts | Turn on the VPN. |
+| Authentication / `401` / `403` errors                    | Your token is wrong or expired: [create a new one](get-access.md#4-create-a-download-token).                                      |
+| Connection timeouts                                          | Turn on the VPN.                                                                                                                 |
 
-Still stuck? Ask on the lab Slack, and share the command you ran and the error.
+Still stuck? [Open an issue](https://github.com/neuropoly/neuropoly-db/issues/new/choose) (best) or ask on the lab Slack. **Share the command you ran and the error message**.
 
 Next: [Tutorial: your first cohort](tutorial-first-cohort.md)
