@@ -11,23 +11,28 @@ flowchart LR
 
 ## The three pieces
 
-| | What it is | Where |
-|-|------------|-------|
-| **Neurobagel** | A search website. Filter subjects by age, sex, diagnosis, type of scan... across all lab datasets at once. | <https://data.neuro.polymtl.ca/bagel> |
-| **NeuroData** | The lab's data server. Every dataset lives there, organized in the [BIDS](https://bids.neuroimaging.io) format. | <https://data.neuro.polymtl.ca> |
-| **npdb** | A command you type in a terminal. It reads your Neurobagel results and downloads only those subjects from NeuroData. | your computer |
+|                      | What it is                                                                                                           | Where                                                                     |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| **Neurobagel** | A search website. Filter subjects by age, sex, diagnosis, type of scan... across all lab datasets at once.           | [https://data.neuro.polymtl.ca/bagel](https://data.neuro.polymtl.ca/bagel) |
+| **NeuroData**  | The lab's data server. Every dataset lives there, organized in the [BIDS](https://bids.neuroimaging.io) format.       | [https://data.neuro.polymtl.ca](https://data.neuro.polymtl.ca)             |
+| **npdb**       | A command you type in a terminal. It reads your Neurobagel results and downloads only those subjects from NeuroData. | your computer                                                             |
 
 ## What you can do
 
-- **Browse** what data exists, without downloading anything.
-- **Build a cohort**: e.g. "all females with a T2-weighted spinal cord scan".
-- **Download exactly that cohort**, from several datasets in one go, without cloning whole datasets.
+- **Browse** what data exists, without downloading anything:
+  - Using queries (age, sex, imaging modality, etc.) on the [Neurobagel UI](https://data.neuro.polymtl.ca/bagel).
+  - Introspecting the datasets available on [NeuroData](https://data.neuro.polymtl.ca/datasets).
+- **Build a cohort**: using the Neurobagel UI:
+  - e.g. "sex=female, imaging modality=T2-weighted,  minimal age=18".
+  - Query result saved to `my-neurobagel-query-result.tsv`.
+- **Download exactly that cohort**, sparsely from several datasets in one go:
+  - `npdb download my-neurobagel-query-result.tsv`
 
 ## What you need
 
 - The Polytechnique **VPN** when you're off campus.
-- To be a member of the **[neuropoly GitHub organization](https://github.com/neuropoly)** (to open Neurobagel).
-- A **NeuroData account** (to download).
+- Be a member of the **[neuropoly GitHub organization](https://github.com/neuropoly)** (to open Neurobagel).
+- A **NeuroData account** (to download using `npdb`).
 
 Setting these up is a one-time job: [Get access](get-access.md).
 
