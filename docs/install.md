@@ -71,6 +71,11 @@ git submodule update --init --recursive -- tools/bids-validator-rust
 uv tool install --python 3.12 ".[all]"
 ```
 
+Linux wheel builds audit the native validator before assigning a portable tag.
+Manylinux wheels allow standard glibc runtime libraries, including
+`libpthread.so.0` and `libdl.so.2`, while requiring glibc 2.28 or older.
+Musllinux wheels reject glibc dependencies.
+
 ## 5. Check the installation
 
 ```bash

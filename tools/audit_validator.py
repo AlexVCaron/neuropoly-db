@@ -32,8 +32,10 @@ def audit(binary: Path, wheel_platform: str) -> None:
         if wheel_platform.startswith("manylinux_"):
             allowed = {
                 "libc.so.6",
+                "libdl.so.2",
                 "libgcc_s.so.1",
                 "libm.so.6",
+                "libpthread.so.0",
                 "ld-linux-x86-64.so.2",
                 "ld-linux-aarch64.so.1",
             }
