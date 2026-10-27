@@ -99,10 +99,10 @@ jobs:
           path: wheel-artifact
       - name: Prepare interpreter-specific dependency wheels
         run: |
-          python -m pip download --only-binary=:all: --dest wheelhouse wheel-artifact/*.whl
+          python -m pip download --only-binary=:all: --dest wheelhouse wheel-artifact/dist/*.whl
       - name: Offline installed-wheel acceptance
         run: |
-          python tools/verify_validator_wheel.py wheel-artifact/*.whl \
+          python tools/verify_validator_wheel.py wheel-artifact/dist/*.whl \
             --wheelhouse wheelhouse --metrics validator-python-sizes.json
 
   desktop:
@@ -119,9 +119,6 @@ jobs:
           - runner: windows-2022
             target: x86_64-pc-windows-msvc
             tag: win_amd64
-          - runner: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            tag: win_arm64
     runs-on: ${{ matrix.runner }}
     env:
       NPDB_RUST_TARGET: ${{ matrix.target }}
