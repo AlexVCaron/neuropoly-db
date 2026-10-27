@@ -93,17 +93,51 @@ def test_build_locks_dependencies_and_preserves_source_identity_and_notices(tmp_
     assert json.loads((destination / "provenance.json").read_text())["target"] == target
 
 
-def test_rejects_linux_binary_above_claimed_glibc_baseline(tmp_path):
+@pytest.mark.parametrize(
+    "architecture,machine,loader",
+    [
+        ("x86_64", "Advanced Micro Devices X86-64", "ld-linux-x86-64.so.2"),
+        ("aarch64", "AArch64", "ld-linux-aarch64.so.1"),
+    ],
+)
+def test_accepts_manylinux_glibc_runtime_libraries(
+    tmp_path, architecture, machine, loader
+):
+    libraries = [
+        "libc.so.6",
+        "libdl.so.2",
+        "libgcc_s.so.1",
+        "libm.so.6",
+        "libpthread.so.0",
+        loader,
+    ]
     outputs = [
-        Mock(stdout="Machine: Advanced Micro Devices X86-64"),
-        Mock(stdout="Shared library: [libc.so.6]"),
+        Mock(stdout=f"Machine: {machine}"),
+        Mock(stdout="\n".join(f"Shared library: [{name}]" for name in libraries)),
+        Mock(stdout="GLIBC_2.17\nGLIBC_2.28"),
+    ]
+
+    with patch("subprocess.run", side_effect=outputs):
+        audit(tmp_path / "binary", f"manylinux_2_28_{architecture}")
+
+
+@pytest.mark.parametrize(
+    "architecture,machine",
+    [("x86_64", "Advanced Micro Devices X86-64"), ("aarch64", "AArch64")],
+)
+def test_rejects_linux_binary_above_claimed_glibc_baseline(
+    tmp_path, architecture, machine
+):
+    outputs = [
+        Mock(stdout=f"Machine: {machine}"),
+        Mock(stdout="Shared library: [libpthread.so.0]\nShared library: [libdl.so.2]"),
         Mock(stdout="GLIBC_2.34"),
     ]
     with (
         patch("subprocess.run", side_effect=outputs),
         pytest.raises(RuntimeError, match="above 2.28"),
     ):
-        audit(tmp_path / "binary", "manylinux_2_28_x86_64")
+        audit(tmp_path / "binary", f"manylinux_2_28_{architecture}")
 
 
 def test_rejects_unbundled_linux_runtime_dependency(tmp_path):
@@ -117,6 +151,21 @@ def test_rejects_unbundled_linux_runtime_dependency(tmp_path):
         pytest.raises(RuntimeError, match="Unbundled native dependencies"),
     ):
         audit(tmp_path / "binary", "manylinux_2_28_x86_64")
+
+
+@pytest.mark.parametrize("library", ["libpthread.so.0", "libdl.so.2"])
+def test_rejects_glibc_runtime_libraries_in_musllinux(tmp_path, library):
+    outputs = [
+        Mock(stdout="Machine: AArch64"),
+        Mock(stdout=f"Shared library: [{library}]"),
+        Mock(stdout=""),
+    ]
+
+    with (
+        patch("subprocess.run", side_effect=outputs),
+        pytest.raises(RuntimeError, match="Unbundled native dependencies"),
+    ):
+        audit(tmp_path / "binary", "musllinux_1_2_aarch64")
 
 
 def test_rejects_wrong_linux_architecture(tmp_path):
