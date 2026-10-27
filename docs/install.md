@@ -76,6 +76,10 @@ Manylinux wheels allow standard glibc runtime libraries, including
 `libpthread.so.0` and `libdl.so.2`, while requiring glibc 2.28 or older.
 Musllinux wheels reject glibc dependencies.
 
+The wheel build matrix does not support native Windows ARM64 installations:
+the required `bagel` dependency uses `bids2table`, whose `pyarrow` dependency
+has no compatible binary wheel. Windows x86-64 builds remain supported.
+
 ## 5. Check the installation
 
 ```bash
