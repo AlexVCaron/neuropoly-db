@@ -261,7 +261,7 @@ class TestStandardizeSubcommand:
 
     def test_annotation_config_available_in_cli(self):
         """Test that AnnotationConfig is available in CLI."""
-        from npdb.providers.annotation import NeurobagelAnnotator
+        from npdb.annotators import NeurobagelAnnotator
 
         assert NeurobagelAnnotator is not None
         assert AnnotationConfig is not None

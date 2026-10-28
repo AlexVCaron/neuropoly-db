@@ -112,7 +112,7 @@ def no_interactive_annotation(request, monkeypatch):
         "test_neurodata_dataset_is_ingestable",
     }:
         return
-    from npdb.providers.annotation import NeurobagelAnnotator
+    from npdb.annotators import NeurobagelAnnotator
 
     async def unexpected(*_, **__):
         raise AssertionError("conversion reached interactive annotation")
@@ -194,7 +194,7 @@ def ingest_patches(stack: ExitStack):
     from bagel import mappings
     from bagel.cli import pheno
 
-    from npdb.providers.annotation import NeurobagelAnnotator
+    from npdb.annotators import NeurobagelAnnotator
 
     dictionary = {
         "participant_id": {

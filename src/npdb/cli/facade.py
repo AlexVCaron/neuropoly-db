@@ -14,9 +14,9 @@ from typing import Optional
 
 from bids_repair.validation import BidsSeverity, validate_and_repair_bids_dataset
 from npdb.annotation import AnnotationConfig
+from npdb.annotators import BIDSAnnotator, NeurobagelAnnotator
 from npdb.cli.helpers import extend_bids_description
 from npdb.errors import NpdbError
-from npdb.providers.annotation import BIDSStandardizer, NeurobagelAnnotator
 from npdb.providers.neuropoly import BagelNeuroPolyMTL
 from npdb.report import LedgerObserver, RunLedger
 
@@ -150,7 +150,7 @@ class BIDSStandardizationFacade:
 
     Orchestrates:
     1. Validate that participants.tsv exists
-    2. Run BIDSStandardizer (with an optional LedgerObserver)
+    2. Run BIDSAnnotator (with an optional LedgerObserver)
     """
 
     def __init__(
@@ -176,7 +176,7 @@ class BIDSStandardizationFacade:
                 f"participants.tsv not found in BIDS directory: {bids_dir}"
             )
 
-        standardizer = BIDSStandardizer(self._annotation_config)
+        standardizer = BIDSAnnotator(self._annotation_config)
         standardizer.add_observer(LedgerObserver(self._run_ledger))
 
         success = await standardizer.execute(input_path=bids_dir)
@@ -184,7 +184,7 @@ class BIDSStandardizationFacade:
         if success:
             self._run_ledger.record_success()
         else:
-            self._run_ledger.record_failure("BIDSStandardizer returned False")
+            self._run_ledger.record_failure("BIDSAnnotator returned False")
 
         self._run_ledger.flush()
         if not success:

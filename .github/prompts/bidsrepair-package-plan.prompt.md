@@ -43,7 +43,7 @@ Neurobagel annotation policy, and conversion orchestration.
 | `src/npdb/annotation/preflight.py` | Bagel-supported suffix checks and phenotype/imaging ID comparison | Keep in `npdb` |
 | `src/npdb/providers/midrc_bids.py` | MIDRC clinical joins, acquisition interpretation and DICOM conversion | Keep in `npdb`, consuming shared BIDS helpers |
 | `extend_bids_description` in `src/npdb/cli/helpers.py` | Neurobagel repository/access metadata enrichment | Keep in `npdb` |
-| `BIDSStandardizer` in `src/npdb/providers/annotation.py` | Annotation configuration, mapping resolution and provenance orchestration | Keep in `npdb`, delegating structural operations |
+| `BIDSAnnotator` and `NeurobagelAnnotator` in `src/npdb/annotators.py` | Annotation configuration, mapping resolution and provenance orchestration | Keep in `npdb`, separate from providers, delegating structural operations |
 | Archive helpers in `src/npdb/providers/preparation.py` | Safe ZIP/TAR extraction and legacy ZIP offset repair | Keep in `npdb`; these are download infrastructure |
 
 ## Proposed layout

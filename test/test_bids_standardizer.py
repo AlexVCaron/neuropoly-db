@@ -23,8 +23,8 @@ from npdb.annotation.standardize import (
     rename_tsv_headers,
     validate_bids_sidecar,
 )
+from npdb.annotators import BIDSAnnotator
 from npdb.automation.mappings.resolvers import MappingResolver
-from npdb.providers.annotation import BIDSStandardizer
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "datasets" / "unstandardized_bids"
 
@@ -341,7 +341,7 @@ class TestDryRun:
         assert not (bids / "participants.json").exists()
 
         config = AnnotationConfig(mode="auto", dry_run=True)
-        standardizer = BIDSStandardizer(config)
+        standardizer = BIDSAnnotator(config)
 
         import asyncio
 
@@ -367,7 +367,7 @@ class TestEndToEnd:
         shutil.copytree(FIXTURES_DIR, bids)
 
         config = AnnotationConfig(mode="auto")
-        standardizer = BIDSStandardizer(config)
+        standardizer = BIDSAnnotator(config)
 
         import asyncio
 
@@ -404,13 +404,13 @@ class TestEndToEnd:
         import asyncio
 
         # First run
-        s1 = BIDSStandardizer(config)
+        s1 = BIDSAnnotator(config)
         asyncio.run(s1.execute(input_path=bids))
         tsv_after_first = (bids / "participants.tsv").read_text()
         json_after_first = (bids / "participants.json").read_text()
 
         # Second run
-        s2 = BIDSStandardizer(config)
+        s2 = BIDSAnnotator(config)
         asyncio.run(s2.execute(input_path=bids))
         tsv_after_second = (bids / "participants.tsv").read_text()
         json_after_second = (bids / "participants.json").read_text()

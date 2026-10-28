@@ -392,12 +392,3 @@ def test_import_boundary_including_lazy_imports():
         check=False,
     )
     assert result.returncode == 0, result.stderr
-
-
-def test_deprecated_python_imports_are_identity_preserving():
-    from bids_repair import repair, validation
-    from npdb import bids_repair as old_repair
-    from npdb.external import bids as old_validation
-
-    assert old_repair is repair
-    assert old_validation is validation

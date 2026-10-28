@@ -138,7 +138,7 @@ class NeurobagelAnnotator(Annotator):
         return await strategy.run(resolved_input_path, output_dir, ctx)
 
 
-class BIDSStandardizer(Annotator):
+class BIDSAnnotator(Annotator):
     """
     Standardizes BIDS dataset participants.tsv and participants.json.
 

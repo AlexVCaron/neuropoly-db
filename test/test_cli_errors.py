@@ -511,7 +511,7 @@ def test_standardize_fails_when_standardizer_fails(tmp_path):
     dataset.mkdir()
     (dataset / "participants.tsv").write_text("participant_id\nsub-01\n")
     with patch(
-        "npdb.cli.facade.BIDSStandardizer.execute", new=AsyncMock(return_value=False)
+        "npdb.cli.facade.BIDSAnnotator.execute", new=AsyncMock(return_value=False)
     ):
         with pytest.raises(NpdbError, match="Standardization did not complete"):
             asyncio.run(BIDSStandardizationFacade(AnnotationConfig()).run(dataset))

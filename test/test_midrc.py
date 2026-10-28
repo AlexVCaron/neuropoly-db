@@ -538,7 +538,7 @@ def test_shared_pipeline_produces_real_neurobagel_jsonld(provider, sdk, tmp_path
     from bagel import mappings
     from bagel.cli import pheno
 
-    from npdb.providers.annotation import NeurobagelAnnotator
+    from npdb.annotators import NeurobagelAnnotator
 
     archive_bytes = io.BytesIO()
     image = nib.Nifti1Image(np.zeros((2, 2, 2), dtype=np.int16), np.eye(4))
