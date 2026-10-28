@@ -4,14 +4,13 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from npdb.bids_repair import (
+from bids_repair import (
     BidsRepairError,
     apply_bids_repair,
     plan_bids_repair,
     recover_bids_repair,
 )
-from npdb.external import bids as bids_module
-from npdb.external.bids import (
+from bids_repair.validation import (
     BidsValidationError,
     findings_above_threshold,
     get_bids_validation_report,
@@ -84,7 +83,9 @@ def test_plan_normalizes_description_losslessly_with_explicit_version(tmp_path):
         },
     )
 
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         plan = plan_bids_repair(root, bids_version="1.9.0")
 
     assert len(plan["operations"]) == 1
@@ -115,7 +116,9 @@ def test_description_plan_keeps_authors_fix_and_reports_missing_version(tmp_path
         },
     )
 
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         plan = plan_bids_repair(root)
 
     assert len(plan["operations"]) == 1
@@ -137,7 +140,9 @@ def test_description_plan_distinguishes_malformed_json_and_schema_type(tmp_path)
     )
     description.write_text("{", encoding="utf-8")
 
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         malformed = plan_bids_repair(root)
 
     assert any(
@@ -148,7 +153,9 @@ def test_description_plan_distinguishes_malformed_json_and_schema_type(tmp_path)
 
     description.write_text('{"Name":"Example","Authors":4}', encoding="utf-8")
 
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         wrong_type = plan_bids_repair(root)
 
     assert any(
@@ -172,7 +179,9 @@ def test_explicit_version_is_applied_without_overwriting_unsupported_authors(tmp
         },
     )
 
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         plan = plan_bids_repair(root, bids_version="1.9.0")
 
     updated = json.loads(plan["operations"][0]["content"])
@@ -196,7 +205,9 @@ def test_plan_infers_subject_session_orders_entities_and_normalizes_run(tmp_path
         _filename_issue("sub-01/ses-02/func/run2_task-rest_bold.nii.gz"),
     )
 
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         plan = plan_bids_repair(root)
 
     rename = next(item for item in plan["operations"] if item["kind"] == "rename")
@@ -215,7 +226,9 @@ def test_ambiguous_tokens_and_conflicting_directory_entities_stay_unresolved(tmp
         _filename_issue("sub-01/func/sub-02_task-rest_bold.nii.gz", "error"),
         _filename_issue("sub-01/func/sub-01_task-rest_WE_events.tsv"),
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         plan = plan_bids_repair(root)
     assert plan["operations"] == []
     assert any("conflicts" in item.get("resolution", "") for item in plan["findings"])
@@ -234,11 +247,15 @@ def test_explicit_suffix_alias_is_applied_and_alias_chains_are_rejected(tmp_path
     report = _report(
         root, _filename_issue("sub-01/func/sub-01_task-rest_oldbold.nii.gz")
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         plan = plan_bids_repair(root, suffix_aliases={"oldbold": "bold"})
     rename = next(item for item in plan["operations"] if item["kind"] == "rename")
     assert Path(rename["target"]).name == "sub-01_task-rest_bold.nii.gz"
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         many_to_one = plan_bids_repair(
             root, suffix_aliases={"oldbold": "bold", "otherbold": "bold"}
         )
@@ -248,7 +265,7 @@ def test_explicit_suffix_alias_is_applied_and_alias_chains_are_rejected(tmp_path
     }
     with pytest.raises(ValueError, match="Conflicting suffix aliases"):
         with patch(
-            "npdb.external.bids.get_bids_validation_report", return_value=report
+            "bids_repair.validation.get_bids_validation_report", return_value=report
         ):
             plan_bids_repair(
                 root,
@@ -275,7 +292,9 @@ def test_apply_updates_associated_files_and_intendedfor_with_metadata_backup(tmp
         root,
         _filename_issue(f"sub-01/func/{stem}.nii.gz"),
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         plan = plan_bids_repair(root)
 
     result = apply_bids_repair(plan)
@@ -301,7 +320,9 @@ def test_application_rejects_stale_plan_collisions_and_symlinks(tmp_path):
     report = _report(
         root, _filename_issue("sub-01/func/sub-01_task-rest_run2_bold.nii.gz")
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         plan = plan_bids_repair(root)
     source.write_bytes(b"changed")
     with pytest.raises(BidsRepairError, match="stale"):
@@ -318,7 +339,9 @@ def test_application_rejects_stale_plan_collisions_and_symlinks(tmp_path):
     outside = tmp_path / "outside.nii.gz"
     outside.write_bytes(b"outside")
     source.symlink_to(outside)
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         symlink_plan = plan_bids_repair(root)
     assert symlink_plan["operations"] == []
 
@@ -337,12 +360,14 @@ def test_failed_application_leaves_journal_recoverable(tmp_path):
         root,
         *[_filename_issue(f"sub-01/func/{filename}") for filename in filenames],
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         plan = plan_bids_repair(root)
 
-    from npdb import bids_repair
+    from bids_repair import repair
 
-    original_rename = bids_repair._rename_no_replace
+    original_rename = repair._rename_no_replace
     calls = 0
 
     def fail_second(source: Path, target: Path) -> None:
@@ -353,9 +378,9 @@ def test_failed_application_leaves_journal_recoverable(tmp_path):
         original_rename(source, target)
 
     with (
-        patch("npdb.bids_repair._rename_no_replace", side_effect=fail_second),
+        patch("bids_repair.repair._rename_no_replace", side_effect=fail_second),
         patch(
-            "npdb.bids_repair._recover_journal", side_effect=OSError("defer recovery")
+            "bids_repair.repair._recover_journal", side_effect=OSError("defer recovery")
         ),
         pytest.raises(BidsRepairError, match="rollback also failed"),
     ):
@@ -382,9 +407,9 @@ def test_validator_report_survives_nonzero_exit_but_standalone_validator_stays_s
         },
     )
     with (
-        patch("npdb.external.bids._validator_executable", return_value="validator"),
+        patch("bids_repair.validation._validator_executable", return_value="validator"),
         patch(
-            "npdb.external.bids._native_dataset_report",
+            "bids_repair.validation._native_dataset_report",
             return_value=report["datasets"][0],
         ),
     ):
@@ -395,9 +420,9 @@ def test_validator_report_survives_nonzero_exit_but_standalone_validator_stays_s
         assert issue["diagnostics"]["json_valid"] is False
         assert "missing or unsafe" in issue["message"]
     with (
-        patch("npdb.external.bids._validator_executable", return_value="validator"),
+        patch("bids_repair.validation._validator_executable", return_value="validator"),
         patch(
-            "npdb.external.bids._native_dataset_report",
+            "bids_repair.validation._native_dataset_report",
             return_value=report["datasets"][0],
         ),
         pytest.raises(RuntimeError, match="validation failed"),
@@ -425,7 +450,7 @@ def test_orchestrator_revalidates_and_fails_with_unresolved_errors(tmp_path):
     )
     with (
         patch(
-            "npdb.external.bids.get_bids_validation_report",
+            "bids_repair.validation.get_bids_validation_report",
             side_effect=[original, final],
         ),
         pytest.raises(BidsValidationError, match="above 'warning'"),
@@ -455,7 +480,9 @@ def test_final_severity_threshold_is_exclusive(tmp_path, severity, threshold, pa
         root,
         {"code": "UNSUPPORTED", "severity": severity, "message": "Cannot repair"},
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         if passes:
             result = validate_and_repair_bids_dataset(
                 root, severity_threshold=threshold
@@ -609,7 +636,7 @@ def test_threshold_is_not_checked_at_entry_or_between_repair_passes(tmp_path):
         _report(root),
     ]
     with patch(
-        "npdb.external.bids.get_bids_validation_report", side_effect=reports
+        "bids_repair.validation.get_bids_validation_report", side_effect=reports
     ) as validate:
         result = validate_and_repair_bids_dataset(root, severity_threshold="info")
     assert validate.call_count == 3
@@ -632,7 +659,9 @@ def test_permissive_threshold_still_repairs_and_reports_remaining_errors(tmp_pat
             "message": "Invalid description",
         },
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         result = validate_and_repair_bids_dataset(root, severity_threshold="error")
     assert json.loads(description.read_text())["Authors"] == ["One author"]
     assert result["repair"]["applied"]
@@ -657,9 +686,10 @@ def test_permissive_threshold_does_not_hide_application_failure(tmp_path):
         },
     )
     with (
-        patch("npdb.external.bids.get_bids_validation_report", return_value=report),
+        patch("bids_repair.validation.get_bids_validation_report", return_value=report),
         patch(
-            "npdb.bids_repair.apply_bids_repair", side_effect=BidsRepairError("unsafe")
+            "bids_repair.repair.apply_bids_repair",
+            side_effect=BidsRepairError("unsafe"),
         ),
         pytest.raises(RuntimeError, match="application failed: unsafe"),
     ):
@@ -693,7 +723,7 @@ def test_orchestrator_returns_final_report_with_repair_audit(tmp_path):
     )
     final = _report(root)
     with patch(
-        "npdb.external.bids.get_bids_validation_report",
+        "bids_repair.validation.get_bids_validation_report",
         side_effect=[initial, final],
     ):
         result = validate_and_repair_bids_dataset(root)
@@ -712,7 +742,9 @@ def test_warning_only_output_is_concise_and_manifest_retains_details(tmp_path, c
     report = _report(
         root, _filename_issue("sub-01/func/sub-01_task-rest_UNKNOWN_events.tsv")
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         result = validate_and_repair_bids_dataset(root)
 
     output = capsys.readouterr().err
@@ -744,7 +776,7 @@ def test_failed_final_gate_persists_manifest_beside_journal(tmp_path, capsys):
         },
     )
     with (
-        patch("npdb.external.bids.get_bids_validation_report", return_value=report),
+        patch("bids_repair.validation.get_bids_validation_report", return_value=report),
         pytest.raises(BidsValidationError) as failure,
     ):
         validate_and_repair_bids_dataset(root)
@@ -773,7 +805,9 @@ def test_manifest_counts_and_repeated_noop_runs_are_preserved(tmp_path, capsys):
         {"code": "WARN", "severity": "warning", "message": "Warning"},
         {"code": "ERR", "severity": "error", "message": "Error"},
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         first = validate_and_repair_bids_dataset(root, severity_threshold="error")
         second = validate_and_repair_bids_dataset(root, severity_threshold="error")
     assert first["repair"]["counts"] == {"info": 1, "warning": 1, "error": 1}
@@ -788,9 +822,10 @@ def test_manifest_write_failure_is_explicit_and_not_success(tmp_path):
     root = _make_dataset(tmp_path)
     with (
         patch(
-            "npdb.external.bids.get_bids_validation_report", return_value=_report(root)
+            "bids_repair.validation.get_bids_validation_report",
+            return_value=_report(root),
         ),
-        patch("npdb.bids_repair._write_journal", side_effect=OSError("disk full")),
+        patch("bids_repair.repair._write_journal", side_effect=OSError("disk full")),
         pytest.raises(
             BidsRepairError, match="Cannot save BIDS validation manifest.*disk full"
         ),
@@ -807,7 +842,8 @@ def test_manifest_refuses_symlink_output_directory(tmp_path):
     )
     with (
         patch(
-            "npdb.external.bids.get_bids_validation_report", return_value=_report(root)
+            "bids_repair.validation.get_bids_validation_report",
+            return_value=_report(root),
         ),
         pytest.raises(BidsRepairError, match="symlink manifest directory"),
     ):

@@ -5,7 +5,7 @@ import pytest
 
 from npdb.annotation import AnnotationConfig
 from npdb.cli.facade import DatasetConversionFacade
-from npdb.managers.neuropoly import BagelNeuroPolyMTL
+from npdb.providers.neuropoly import BagelNeuroPolyMTL
 
 
 @pytest.mark.asyncio
@@ -44,7 +44,7 @@ def test_conversion_repairs_before_phenotype_and_suffix_preflight(tmp_path):
     description = {"Name": "before"}
     description_path = bids_dir / "dataset_description.json"
     description_path.write_text(json.dumps(description), encoding="utf-8")
-    manager = BagelNeuroPolyMTL(str(tmp_path / "output"))
+    provider = BagelNeuroPolyMTL(str(tmp_path / "output"))
     report = {"datasets": [{"errors": 0}], "repair": {"applied": [], "unresolved": []}}
 
     class StopAtPreprocess(Exception):
@@ -52,18 +52,18 @@ def test_conversion_repairs_before_phenotype_and_suffix_preflight(tmp_path):
 
     with (
         patch(
-            "npdb.managers.neuropoly.validate_and_repair_bids_dataset",
+            "npdb.providers.neuropoly.validate_and_repair_bids_dataset",
             return_value=report,
         ) as validate,
         patch.object(
-            manager,
+            provider,
             "_preprocess_phenotypes",
             side_effect=StopAtPreprocess,
         ) as preprocess,
-        patch.object(manager, "_run_preflight") as preflight,
+        patch.object(provider, "_run_preflight") as preflight,
         pytest.raises(StopAtPreprocess),
     ):
-        manager.convert_bids(
+        provider.convert_bids(
             dataset="dataset",
             bids_dir=str(bids_dir),
             phenotypes_tsv=str(tmp_path / "phenotypes.tsv"),

@@ -6,9 +6,9 @@ from unittest.mock import Mock, patch
 import pytest
 from typer.testing import CliRunner
 
-from npdb.managers.figshare import FigshareProviderManager
-from npdb.managers.model import ProviderManager, ProviderName
-from npdb.managers.preparation import find_dataset_root, prepare_provider_dataset
+from npdb.providers.figshare import FigshareProvider
+from npdb.providers.model import Provider, ProviderName
+from npdb.providers.preparation import find_dataset_root, prepare_provider_dataset
 
 
 def test_reorganizes_dataset_and_generates_participants(tmp_path):
@@ -127,8 +127,8 @@ def test_missing_subjects_raise_without_empty_table(tmp_path):
 
 def test_provider_prepares_extracted_data_before_conversion(tmp_path):
     module = importlib.import_module("npdb.cli.cli")
-    manager = Mock()
-    manager.provider_name = "figshare"
+    provider = Mock()
+    provider.provider_name = "figshare"
 
     def unpack(fetched):
         assert fetched == tmp_path
@@ -137,9 +137,9 @@ def test_provider_prepares_extracted_data_before_conversion(tmp_path):
         return tmp_path
 
     def fetch(*args, **kwargs):
-        return ProviderManager().prepare(unpack(tmp_path))
+        return Provider().prepare(unpack(tmp_path))
 
-    manager.fetch.side_effect = fetch
+    provider.fetch.side_effect = fetch
 
     def convert(**kwargs):
         assert kwargs["input_dir"] == tmp_path
@@ -150,7 +150,7 @@ def test_provider_prepares_extracted_data_before_conversion(tmp_path):
         )
 
     with (
-        patch.object(module.ProviderManagerFactory, "create", return_value=manager),
+        patch.object(module.ProviderFactory, "create", return_value=provider),
         patch("npdb.cli.cli.local2bagel", side_effect=convert) as conversion,
     ):
         module._provider_call(
@@ -201,11 +201,11 @@ def test_figshare_cli_fetches_and_prepares_inside_output(tmp_path):
     command = ["convert", "bagel"]
     with (
         patch.object(
-            module.ProviderManagerFactory,
+            module.ProviderFactory,
             "create",
-            return_value=FigshareProviderManager(token="test-token"),
+            return_value=FigshareProvider(token="test-token"),
         ),
-        patch("npdb.managers.figshare.httpx.get", side_effect=[article, download]),
+        patch("npdb.providers.figshare.httpx.get", side_effect=[article, download]),
         patch("npdb.cli.cli.local2bagel", side_effect=convert) as conversion,
     ):
         result = CliRunner().invoke(app, [*command, "figshare", "123", str(output)])
@@ -218,13 +218,13 @@ def test_figshare_cli_fetches_and_prepares_inside_output(tmp_path):
 
 def test_other_provider_staging_path_is_unchanged(tmp_path):
     module = importlib.import_module("npdb.cli.cli")
-    manager = Mock()
-    manager.provider_name = ProviderName.ZENODO
+    provider = Mock()
+    provider.provider_name = ProviderName.ZENODO
     output = tmp_path / "out"
     staging = output / "zenodo_123"
-    manager.fetch.return_value = staging
+    provider.fetch.return_value = staging
     with (
-        patch.object(module.ProviderManagerFactory, "create", return_value=manager),
+        patch.object(module.ProviderFactory, "create", return_value=provider),
         patch("npdb.cli.cli.local2bagel") as conversion,
     ):
         module._provider_call(
@@ -243,7 +243,7 @@ def test_other_provider_staging_path_is_unchanged(tmp_path):
             header_map=None,
             extend_modalities=True,
         )
-    manager.fetch.assert_called_once_with("123", staging)
+    provider.fetch.assert_called_once_with("123", staging)
     assert conversion.call_args.kwargs["output"] == output
 
 

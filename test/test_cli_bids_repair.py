@@ -27,7 +27,7 @@ def test_repair_bids_defaults_to_read_only_json_plan(tmp_path):
 
     with (
         patch("bids_repair.cli.plan_bids_repair", return_value=plan) as planner,
-        patch("npdb.bids_repair.apply_bids_repair") as apply,
+        patch("bids_repair.repair.apply_bids_repair") as apply,
     ):
         result = repair_runner.invoke(
             app,
@@ -211,7 +211,7 @@ def test_provider_conversion_passes_repair_options_without_fetching_remote_data(
     provider.fetch.return_value = dataset
     with (
         patch(
-            "npdb.cli.cli.ProviderManagerFactory.create", return_value=provider
+            "npdb.cli.cli.ProviderFactory.create", return_value=provider
         ) as factory,
         patch("npdb.cli.cli.local2bagel", wraps=local2bagel) as convert,
         patch("npdb.cli.facade.DatasetConversionFacade.run") as run,
@@ -328,7 +328,7 @@ def test_repair_apply_gates_only_revalidated_findings(
         ]
     }
     with patch(
-        "npdb.external.bids.get_bids_validation_report",
+        "bids_repair.validation.get_bids_validation_report",
         side_effect=[initial, final],
     ) as validate:
         result = repair_runner.invoke(
@@ -358,7 +358,7 @@ def test_repair_apply_gates_only_revalidated_findings(
 def test_invalid_severity_threshold_is_rejected_before_repair(tmp_path):
     dataset = tmp_path / "dataset"
     dataset.mkdir()
-    with patch("npdb.external.bids.validate_and_repair_bids_dataset") as repair:
+    with patch("bids_repair.validation.validate_and_repair_bids_dataset") as repair:
         result = repair_runner.invoke(
             app,
             [str(dataset), "--apply", "--bids-severity-threshold", "invalid"],
@@ -397,7 +397,9 @@ def test_human_apply_output_stays_bounded_for_large_failure_manifest(tmp_path):
             }
         ]
     }
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         result = repair_runner.invoke(
             app,
             [
@@ -462,7 +464,7 @@ def test_local_conversion_stops_only_when_final_gate_fails(
         ]
     }
     with (
-        patch("npdb.external.bids.get_bids_validation_report", return_value=report),
+        patch("bids_repair.validation.get_bids_validation_report", return_value=report),
         patch(
             "npdb.cli.facade.NeurobagelAnnotator.execute", return_value=True
         ) as annotate,

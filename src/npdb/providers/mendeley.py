@@ -11,14 +11,14 @@ from typing import Any, ClassVar
 
 import httpx
 
-from npdb.managers.model import (
-    ProviderManager,
+from npdb.providers.model import (
+    Provider,
     ProviderName,
     default_download_cache,
 )
 
 
-class MendeleyProviderManager(ProviderManager):
+class MendeleyProvider(Provider):
     provider_name: ClassVar[ProviderName] = ProviderName.MENDELEY
     access_type = "public"
 

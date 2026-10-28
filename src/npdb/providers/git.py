@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
-from npdb.managers.model import GitManager, ProviderManager, ProviderName
+from npdb.providers.model import GitProviderBase, Provider, ProviderName
 
 
-class GitProviderManager(GitManager, ProviderManager):
+class GitProvider(GitProviderBase, Provider):
     provider_name: ClassVar[ProviderName] = ProviderName.GIT
 
     def __init__(
@@ -18,8 +18,8 @@ class GitProviderManager(GitManager, ProviderManager):
         ssl_verify: bool = True,
         cache_dir: str | Path | None = None,
     ):
-        GitManager.__init__(self, user or "", token or "", ssl_verify)
-        ProviderManager.__init__(self, cache_dir=cache_dir)
+        GitProviderBase.__init__(self, user or "", token or "", ssl_verify)
+        Provider.__init__(self, cache_dir=cache_dir)
         self.repo_url = repo_url
 
     def describe(self, identifier: str) -> tuple[str, str]:

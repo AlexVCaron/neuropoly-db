@@ -9,14 +9,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar
 
 from npdb.extras import require_module
-from npdb.managers.model import (
-    ProviderManager,
+from npdb.providers.model import (
+    Provider,
     ProviderName,
     default_download_cache,
 )
 
 
-class ZenodoProviderManager(ProviderManager):
+class ZenodoProvider(Provider):
     provider_name: ClassVar[ProviderName] = ProviderName.ZENODO
 
     def __init__(

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from npdb.managers.git import GitProviderManager
+from npdb.providers.git import GitProvider
 
 
 @pytest.mark.parametrize(
@@ -20,7 +20,7 @@ from npdb.managers.git import GitProviderManager
     ],
 )
 def test_git_dataset_id(identifier: str, expected: str) -> None:
-    assert GitProviderManager(repo_url="").dataset_id(identifier) == expected
+    assert GitProvider(repo_url="").dataset_id(identifier) == expected
 
 
 def _git(*args: str, cwd: Path) -> None:
@@ -48,8 +48,8 @@ def test_git_fetch_checks_out_full_repository(tmp_path: Path) -> None:
     bare = tmp_path / "repo.git"
     _git("clone", "-q", "--bare", str(work), str(bare), cwd=tmp_path)
 
-    manager = GitProviderManager(repo_url="")
-    out = manager.fetch(f"file://{bare}/tree/main", tmp_path / "out")
+    provider = GitProvider(repo_url="")
+    out = provider.fetch(f"file://{bare}/tree/main", tmp_path / "out")
 
     assert (out / "dataset_description.json").is_file()
     assert (out / "sub-01" / "anat" / "sub-01_T1w.json").is_file()

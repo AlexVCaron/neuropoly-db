@@ -51,7 +51,7 @@ class ProviderName(str, Enum):
     FIGSHARE = "figshare"
 
 
-class Manager(ABC):
+class ProviderContract(ABC):
     def __init__(self):
         self._download_observers: list[DownloadObserver] = []
 
@@ -59,41 +59,6 @@ class Manager(ABC):
     @abstractmethod
     def datasets(self) -> Sequence[Any]:
         pass
-
-
-class ProviderManagerBase(Manager):
-    provider_name = "provider"
-    requires_cache = False
-    access_type = "public"
-
-    def __init__(self, cache_dir: str | Path | None = None, **_: Any):
-        super().__init__()
-        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
-
-    @property
-    def datasets(self) -> Sequence[Any]:
-        return []
-
-    def ensure_cache_dir(self, *, required: bool | None = None) -> Path | None:
-        if required is None:
-            required = self.requires_cache
-        if required:
-            if self.cache_dir is None:
-                cache = os.environ.get("NP_NPDB_CACHE_DIR")
-                if cache:
-                    self.cache_dir = Path(cache)
-            if self.cache_dir is None:
-                raise ValueError(
-                    "A cache directory is required for this provider. "
-                    "Pass --cache-dir or set NP_NPDB_CACHE_DIR. "
-                    "This download may be large."
-                )
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            return self.cache_dir
-        return self.cache_dir
-
-    def describe(self, identifier: str) -> tuple[str, str]:
-        return identifier, self.access_type
 
     def fetch(self, identifier: str, output_dir: str | Path, **kwargs: Any) -> Path:
         raise NotImplementedError
@@ -127,7 +92,7 @@ class ProviderManagerBase(Manager):
             obs.on_repo_error(repo, message)
 
 
-class ProviderManager(ProviderManagerBase):
+class Provider(ProviderContract):
     provider_name: ClassVar[ProviderName] = ProviderName.GIT
     requires_cache = False
     access_type = "public"
@@ -160,7 +125,7 @@ class ProviderManager(ProviderManagerBase):
         return identifier, self.access_type
 
     def unpack(self, fetched: str | Path) -> Path:
-        from npdb.managers.preparation import unpack_provider_archives
+        from npdb.providers.preparation import unpack_provider_archives
 
         return unpack_provider_archives(fetched)
 
@@ -179,7 +144,7 @@ class ProviderManager(ProviderManagerBase):
         raise NotImplementedError
 
 
-class GitManager(ProviderManager):
+class GitProviderBase(ProviderContract):
     def __init__(self, user: str, token: str, ssl_verify: bool = True):
         super().__init__()
         self._user = user
@@ -480,7 +445,7 @@ class BagelDB:
         self.root = jsonld_root
 
 
-class NeurobagelManager(Manager):
+class NeurobagelProvider(ProviderContract):
     def __init__(self, jsonld: str):
         self.db = BagelDB(jsonld)
 

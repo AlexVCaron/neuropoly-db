@@ -15,13 +15,12 @@ from bidsschematools.schema import load_schema
 from typer.testing import CliRunner
 from typer.testing import CliRunner as RepairRunner
 
+from bids_repair import BidsRepairError, BidsValidationError
 from bids_repair.cli import app as repair_app
 from npdb.annotation.preflight import PreflightError
-from npdb.bids_repair import BidsRepairError
 from npdb.cli.cli import npdb
 from npdb.cli.errors import ISSUE_URL_LIMIT, diagnose, issue_url
 from npdb.errors import ConfigurationError, GitCommandError, UsageError, redact
-from npdb.external.bids import BidsValidationError
 from npdb.external.neurobagel.errors import BagelCLIError
 from npdb.extras import MissingExecutableError, MissingExtraError
 
@@ -595,13 +594,13 @@ def test_download_and_gitea_missing_credentials(tmp_path, no_gitea_env):
 
 
 def test_gitea_clone_failure_is_explained(tmp_path):
-    manager = type("M", (), {})()
-    manager.clone_repository = lambda *a, **k: (_ for _ in ()).throw(
+    provider = type("M", (), {})()
+    provider.clone_repository = lambda *a, **k: (_ for _ in ()).throw(
         GitCommandError("clone failed.\nStderr: fatal: Authentication failed")
     )
     with (
         patch("npdb.cli.cli._load_env"),
-        patch("npdb.cli.cli.GiteaManagerFactory.create_from_env", return_value=manager),
+        patch("npdb.cli.cli.GiteaProviderFactory.create_from_env", return_value=provider),
     ):
         result = runner.invoke(
             npdb, ["convert", "bagel", "gitea", "ds", str(tmp_path / "out")]
@@ -612,12 +611,12 @@ def test_gitea_clone_failure_is_explained(tmp_path):
 
 
 def test_download_interrupt(tmp_path):
-    manager = type(
+    provider = type(
         "M", (), {"verbose": False, "add_download_observer": lambda self, o: None}
     )()
     with (
         patch("npdb.cli.cli._load_env"),
-        patch("npdb.cli.cli.GiteaManagerFactory.create_from_env", return_value=manager),
+        patch("npdb.cli.cli.GiteaProviderFactory.create_from_env", return_value=provider),
         patch("npdb.cli.cli.repo_has_git_annex", side_effect=KeyboardInterrupt),
     ):
         result = runner.invoke(

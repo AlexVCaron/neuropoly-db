@@ -16,21 +16,21 @@ from typing import Any
 from npdb.annotation import AnnotationConfig
 from npdb.annotation.modes import AnnotationMode
 from npdb.errors import ConfigurationError
-from npdb.managers.figshare import FigshareProviderManager
-from npdb.managers.git import GitProviderManager
-from npdb.managers.kaggle import KaggleProviderManager
-from npdb.managers.mendeley import MendeleyProviderManager
-from npdb.managers.midrc import MIDRCProviderManager
-from npdb.managers.model import ProviderName
-from npdb.managers.neuropoly import DataNeuroPolyMTL
-from npdb.managers.openneuro import OpenNeuroProviderManager
-from npdb.managers.zenodo import ZenodoProviderManager
+from npdb.providers.figshare import FigshareProvider
+from npdb.providers.git import GitProvider
+from npdb.providers.kaggle import KaggleProvider
+from npdb.providers.mendeley import MendeleyProvider
+from npdb.providers.midrc import MIDRCProvider
+from npdb.providers.model import ProviderName
+from npdb.providers.neuropoly import DataNeuroPolyMTL
+from npdb.providers.openneuro import OpenNeuroProvider
+from npdb.providers.zenodo import ZenodoProvider
 from npdb.report import RunLedger
 
 
-class GiteaManagerFactory:
+class GiteaProviderFactory:
     """
-    Creates :class:`~npdb.managers.DataNeuroPolyMTL` from environment variables.
+    Creates :class:`~npdb.providers.DataNeuroPolyMTL` from environment variables.
 
     Required variables:
     - ``NP_GITEA_APP_URL``   — base URL of the Gitea instance
@@ -76,8 +76,8 @@ class GiteaManagerFactory:
         )
 
 
-class ProviderManagerFactory:
-    """Creates provider-backed dataset managers from CLI/env configuration."""
+class ProviderFactory:
+    """Creates provider-backed dataset providers from CLI/env configuration."""
 
     @staticmethod
     def create(
@@ -101,21 +101,21 @@ class ProviderManagerFactory:
             ) from exc
 
         if provider_name == ProviderName.GIT:
-            return GitProviderManager(
+            return GitProvider(
                 repo_url="",
                 user=os.environ.get("NP_GIT_USER"),
                 token=os.environ.get("NP_GIT_TOKEN"),
                 cache_dir=cache_dir,
             )
         if provider_name == ProviderName.KAGGLE:
-            return KaggleProviderManager(cache_dir=cache_dir)
+            return KaggleProvider(cache_dir=cache_dir)
         if provider_name == ProviderName.MENDELEY:
-            return MendeleyProviderManager(
+            return MendeleyProvider(
                 access_token=token or os.environ.get("NP_MENDELEY_ACCESS_TOKEN"),
                 cache_dir=cache_dir,
             )
         if provider_name == ProviderName.MIDRC:
-            return MIDRCProviderManager(
+            return MIDRCProvider(
                 cache_dir=cache_dir,
                 credentials_path=(
                     str(credentials_path)
@@ -126,13 +126,13 @@ class ProviderManagerFactory:
                 or os.environ.get("NP_MIDRC_ENDPOINT", "https://data.midrc.org"),
             )
         if provider_name == ProviderName.OPENNEURO:
-            return OpenNeuroProviderManager(cache_dir=cache_dir)
+            return OpenNeuroProvider(cache_dir=cache_dir)
         if provider_name == ProviderName.ZENODO:
-            return ZenodoProviderManager(
+            return ZenodoProvider(
                 token=token or os.environ.get("NP_ZENODO_TOKEN"), cache_dir=cache_dir
             )
         if provider_name == ProviderName.FIGSHARE:
-            return FigshareProviderManager(
+            return FigshareProvider(
                 token=token or os.environ.get("NP_FIGSHARE_TOKEN")
             )
         raise ValueError(

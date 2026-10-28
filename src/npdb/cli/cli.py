@@ -1,5 +1,4 @@
 import functools
-import json
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,12 +22,12 @@ from npdb.cli.helpers import (
     read_tsv,
     repo_has_git_annex,
 )
-from npdb.errors import ConfigurationError, UsageError
-from npdb.factories import GiteaManagerFactory, ProviderManagerFactory
-from npdb.managers.git import GitProviderManager
-from npdb.managers.mendeley import MendeleyProviderManager
-from npdb.managers.midrc import MIDRCProviderManager
-from npdb.managers.model import ProviderName
+from npdb.errors import UsageError
+from npdb.factories import GiteaProviderFactory, ProviderFactory
+from npdb.providers.git import GitProvider
+from npdb.providers.mendeley import MendeleyProvider
+from npdb.providers.midrc import MIDRCProvider
+from npdb.providers.model import ProviderName
 
 OPTION_GROUP_NAMES = {
     "input": "Input Options",
@@ -335,7 +334,7 @@ def local2bagel(
 
 
 def _provider_call(
-    provider: str | ProviderName,
+    provider_name: str | ProviderName,
     identifier: str,
     *,
     output: Path,
@@ -356,17 +355,17 @@ def _provider_call(
     cache_dir: Optional[Path] = None,
     **kwargs,
 ) -> None:
-    manager = ProviderManagerFactory.create(
-        provider,
+    provider_name = ProviderFactory.create(
+        provider_name,
         cache_dir=str(cache_dir) if cache_dir else None,
         credentials_path=kwargs.get("credentials_path"),
         token=kwargs.get("token"),
         endpoint=kwargs.get("endpoint"),
     )
     provider_id = (
-        manager.provider_name.value
-        if isinstance(manager.provider_name, ProviderName)
-        else str(manager.provider_name)
+        provider_name.provider_name.value
+        if isinstance(provider_name.provider_name, ProviderName)
+        else str(provider_name.provider_name)
     )
 
     dataset_id = (
@@ -375,22 +374,22 @@ def _provider_call(
         else identifier.replace("/", "_")
     )
     dataset_id = dataset_id.replace(".", "_")
-    if isinstance(manager, GitProviderManager):
-        dataset_id = manager.dataset_id(identifier).replace("/", "_")
-    if isinstance(manager, MIDRCProviderManager):
-        dataset_id = manager.discovery_id(identifier) or dataset_id
-        online_url, access_type = manager.describe(identifier)
+    if isinstance(provider_name, GitProvider):
+        dataset_id = provider_name.dataset_id(identifier).replace("/", "_")
+    if isinstance(provider_name, MIDRCProvider):
+        dataset_id = provider_name.discovery_id(identifier) or dataset_id
+        online_url, access_type = provider_name.describe(identifier)
     local_fetch = Path(output) / f"{provider_id}_{dataset_id}"
 
-    if isinstance(manager, (MIDRCProviderManager, MendeleyProviderManager)):
+    if isinstance(provider_name, (MIDRCProvider, MendeleyProvider)):
         display = RepoDownloadDisplay()
-        manager.add_download_observer(display)
+        provider_name.add_download_observer(display)
         with Live(display, refresh_per_second=4, transient=False):
-            fetched = manager.fetch(identifier, local_fetch, **kwargs)
+            fetched = provider_name.fetch(identifier, local_fetch, **kwargs)
     else:
-        fetched = manager.fetch(identifier, local_fetch, **kwargs)
+        fetched = provider_name.fetch(identifier, local_fetch, **kwargs)
     if provider_id == ProviderName.MENDELEY.value:
-        access_type = manager.access_type
+        access_type = provider_name.access_type
 
     local2bagel(
         input_dir=fetched,
@@ -518,17 +517,17 @@ def gitea2bagel(
     * If the dataset itself is public, token-based authentication is often not
       required beyond repository access policies.
     """
-    from npdb.factories import GiteaManagerFactory
+    from npdb.factories import GiteaProviderFactory
 
     _load_env()
-    gitea_manager = GiteaManagerFactory.create_from_env(ssl_verify=verify_ssl)
+    gitea_provider = GiteaProviderFactory.create_from_env(ssl_verify=verify_ssl)
 
     with tempfile.TemporaryDirectory(prefix="npdb_clone_") as tmp_dir:
         local_clone = Path(tmp_dir) / dataset
 
         # 1. Clone the repository
-        gitea_manager.clone_repository(dataset, str(local_clone), light=True)
-        url, access_type = gitea_manager.get_description_extensions(dataset)
+        gitea_provider.clone_repository(dataset, str(local_clone), light=True)
+        url, access_type = gitea_provider.get_description_extensions(dataset)
 
         local2bagel(
             input_dir=local_clone,
@@ -1586,12 +1585,12 @@ def download(
         _load_env()
 
         if verbose:
-            typer.echo("Initializing Gitea manager...")
-        gitea_manager = GiteaManagerFactory.create_from_env(ssl_verify=verify_ssl)
+            typer.echo("Initializing Gitea provider...")
+        gitea_provider = GiteaProviderFactory.create_from_env(ssl_verify=verify_ssl)
         if verbose:
-            typer.echo("Gitea manager initialized successfully.")
+            typer.echo("Gitea provider initialized successfully.")
 
-        gitea_manager.verbose = verbose
+        gitea_provider.verbose = verbose
 
         grouped: dict[tuple[str, str], list[str]] = {}
         for repo_url, sparse_path, dataset in subjects:
@@ -1607,16 +1606,16 @@ def download(
         )
 
         display = RepoDownloadDisplay()
-        gitea_manager.add_download_observer(display)
+        gitea_provider.add_download_observer(display)
 
         with Live(display, refresh_per_second=4, transient=False):
             for (repo_url, dataset), sparse_paths in grouped.items():
-                use_annex = repo_has_git_annex(gitea_manager, repo_url)
+                use_annex = repo_has_git_annex(gitea_provider, repo_url)
                 if verbose:
                     protocol = "git + git-annex" if use_annex else "git"
                     typer.echo(f"Protocol for {dataset}: {protocol}")
 
-                results = gitea_manager.download_subjects(
+                results = gitea_provider.download_subjects(
                     [(repo_url, p, dataset) for p in sparse_paths],
                     output_dir,
                     use_annex=use_annex,

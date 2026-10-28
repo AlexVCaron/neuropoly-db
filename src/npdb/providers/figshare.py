@@ -7,10 +7,10 @@ from typing import Any, ClassVar
 
 import httpx
 
-from npdb.managers.model import ProviderManager, ProviderName
+from npdb.providers.model import Provider, ProviderName
 
 
-class FigshareProviderManager(ProviderManager):
+class FigshareProvider(Provider):
     provider_name: ClassVar[ProviderName] = ProviderName.FIGSHARE
     access_type = "public"
 

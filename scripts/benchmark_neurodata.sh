@@ -104,14 +104,14 @@ declare -A SITE=(
     [api_repos_all]="OrganizationMixin.datasets (all pages, re-fetched on every access)"
     [api_repo]="GET /api/v1/repos/$ORG/<ds>"
     [ls_remote_annex]="cli.helpers.repo_has_git_annex (per repo in 'download')"
-    [ls_remote_head]="cheap alternative to GitManager.get_main_branch_head_commit"
-    [clone_shallow_blobless]="GitManager.clone_sparse / DataNeuroPolyMTL.clone_repository(light)"
-    [sparse_checkout]="GitManager.clone_sparse (sparse-checkout + lazy blob fetch)"
-    [fetch_annex_branch]="GiteaManager.annex_get step 1 (runs twice per repo)"
-    [annex_init]="GiteaManager.annex_get step 3"
-    [annex_merge]="GiteaManager.annex_get step 5 (local control)"
-    [annex_get_small]="GiteaManager.annex_get step 6 (git-annex-shell over SSH)"
-    [npdb_init]="GiteaManagerFactory.create_from_env (py-gitea org + client)"
+    [ls_remote_head]="cheap alternative to GitProvider.get_main_branch_head_commit"
+    [clone_shallow_blobless]="GitProvider.clone_sparse / DataNeuroPolyMTL.clone_repository(light)"
+    [sparse_checkout]="GitProvider.clone_sparse (sparse-checkout + lazy blob fetch)"
+    [fetch_annex_branch]="GiteaProvider.annex_get step 1 (runs twice per repo)"
+    [annex_init]="GiteaProvider.annex_get step 3"
+    [annex_merge]="GiteaProvider.annex_get step 5 (local control)"
+    [annex_get_small]="GiteaProvider.annex_get step 6 (git-annex-shell over SSH)"
+    [npdb_init]="GiteaProviderFactory.create_from_env (py-gitea org + client)"
     [npdb_datasets]="DataNeuroPolyMTL.datasets (py-gitea repo listing)"
 )
 
@@ -687,10 +687,10 @@ probe_git_annex() {
 
 NPDB_PY='
 import os, time
-from npdb.factories import GiteaManagerFactory
+from npdb.factories import GiteaProviderFactory
 verify = os.environ.get("BENCH_SSL_VERIFY", "true") == "true"
 t0 = time.perf_counter()
-m = GiteaManagerFactory.create_from_env(ssl_verify=verify)
+m = GiteaProviderFactory.create_from_env(ssl_verify=verify)
 t1 = time.perf_counter()
 n = len(m.datasets)
 t2 = time.perf_counter()
@@ -699,12 +699,12 @@ print(f"BENCH {t1 - t0:.3f} {t2 - t1:.3f} {n}")
 
 probe_npdb() {
     if (( DRY_RUN )); then
-        printf '[dry-run] run=%s %-24s %s -c <GiteaManagerFactory.create_from_env(); m.datasets>\n' "$RUN" npdb_init "$PYTHON"
+        printf '[dry-run] run=%s %-24s %s -c <GiteaProviderFactory.create_from_env(); m.datasets>\n' "$RUN" npdb_init "$PYTHON"
         return
     fi
     local name=npdb_init rc=0 log line t0 t1
     log=$(log_path "$name")
-    show_cmd "$PYTHON -c <GiteaManagerFactory.create_from_env(); m.datasets>"
+    show_cmd "$PYTHON -c <GiteaProviderFactory.create_from_env(); m.datasets>"
     t0=$(now)
     BENCH_SSL_VERIFY=$SSL_VERIFY timeout --kill-after=5 "$TIMEOUT" "$PYTHON" -c "$NPDB_PY" > "$log.tmp" 2>&1 || rc=$?
     t1=$(now)

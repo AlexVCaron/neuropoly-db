@@ -38,7 +38,7 @@ def _dataset(tmp_path, description):
 
 def test_latest_version_uses_official_stable_release():
     with patch(
-        "npdb.external.bids_version.httpx.get",
+        "bids_repair.bids_version.httpx.get",
         return_value=_release_response(
             {"tag_name": "v1.11.2", "draft": False, "prerelease": False}
         ),
@@ -52,7 +52,7 @@ def test_latest_version_uses_official_stable_release():
 
 @pytest.mark.parametrize("version", [None, "1.9.0", " 1.10.1 "])
 def test_explicit_versions_do_not_require_network(version):
-    with patch("npdb.external.bids_version.httpx.get") as get:
+    with patch("bids_repair.bids_version.httpx.get") as get:
         assert resolve_bids_version(version) == (
             version.strip() if isinstance(version, str) else None
         )
@@ -73,7 +73,7 @@ def test_explicit_versions_do_not_require_network(version):
 def test_latest_rejects_unusable_release_metadata(payload):
     with (
         patch(
-            "npdb.external.bids_version.httpx.get",
+            "bids_repair.bids_version.httpx.get",
             return_value=_release_response(payload),
         ),
         pytest.raises(RuntimeError),
@@ -93,13 +93,13 @@ def test_latest_failures_are_explicit_and_do_not_modify_dataset(tmp_path, failur
 
     with (
         patch(
-            "npdb.external.bids_version.httpx.get",
+            "bids_repair.bids_version.httpx.get",
             return_value=response,
             side_effect=(
                 httpx.TimeoutException("offline") if failure == "timeout" else None
             ),
         ),
-        patch("npdb.external.bids.get_bids_validation_report") as validate,
+        patch("bids_repair.validation.get_bids_validation_report") as validate,
         pytest.raises(RuntimeError),
     ):
         validate_and_repair_bids_dataset(root, bids_version="latest")
@@ -119,7 +119,7 @@ def test_latest_real_validator_apply_records_concrete_version(tmp_path):
         },
     )
     with patch(
-        "npdb.external.bids_version.httpx.get",
+        "bids_repair.bids_version.httpx.get",
         return_value=_release_response(
             {"tag_name": f"v{version}", "draft": False, "prerelease": False}
         ),
@@ -159,7 +159,7 @@ def test_latest_dry_run_preserves_files_and_existing_valid_version(tmp_path):
     original = (root / "dataset_description.json").read_bytes()
 
     with patch(
-        "npdb.external.bids_version.httpx.get",
+        "bids_repair.bids_version.httpx.get",
         return_value=_release_response(
             {"tag_name": "v1.11.2", "draft": False, "prerelease": False}
         ),
@@ -176,7 +176,7 @@ def test_latest_local_conversion_records_version_before_downstream_conversion(tm
 
     with (
         patch(
-            "npdb.external.bids_version.httpx.get",
+            "bids_repair.bids_version.httpx.get",
             return_value=_release_response(
                 {"tag_name": "v1.11.2", "draft": False, "prerelease": False}
             ),
@@ -233,12 +233,12 @@ def test_empty_version_is_repaired_with_explicit_latest(tmp_path):
     }
     with (
         patch(
-            "npdb.external.bids_version.httpx.get",
+            "bids_repair.bids_version.httpx.get",
             return_value=_release_response(
                 {"tag_name": "v1.11.2", "draft": False, "prerelease": False}
             ),
         ),
-        patch("npdb.external.bids.get_bids_validation_report", return_value=report),
+        patch("bids_repair.validation.get_bids_validation_report", return_value=report),
     ):
         plan = plan_bids_repair(root, bids_version="latest")
     assert json.loads(plan["operations"][0]["content"])["BIDSVersion"] == "1.11.2"
@@ -307,7 +307,7 @@ def test_valid_basic_fields_do_not_silently_override_validator_error(tmp_path):
         ]
     }
     with patch(
-        "npdb.external.bids._native_dataset_report",
+        "bids_repair.validation._native_dataset_report",
         return_value=report["datasets"][0],
     ):
         inspected = get_bids_validation_report(root)

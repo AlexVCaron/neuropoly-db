@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from npdb.extras import require_module
-from npdb.managers.model import ProviderManager, ProviderName
+from npdb.providers.model import Provider, ProviderName
 
 
-class OpenNeuroProviderManager(ProviderManager):
+class OpenNeuroProvider(Provider):
     provider_name: ClassVar[ProviderName] = ProviderName.OPENNEURO
 
     def fetch(self, identifier: str, output_dir: str | Path, **kwargs: Any) -> Path:

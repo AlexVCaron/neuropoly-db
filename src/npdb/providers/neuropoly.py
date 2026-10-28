@@ -8,15 +8,15 @@ from typing import Optional
 from bids_repair.validation import BidsSeverity, validate_and_repair_bids_dataset
 from npdb.annotation.preflight import PreflightError, check_bids_suffixes
 from npdb.external.neurobagel.errors import BagelCLIError
-from npdb.external.neurodata.gitea import GiteaManager
-from npdb.managers.model import NeurobagelManager
-from npdb.managers.neurobagel import BagelMixin
-from npdb.managers.neurodata import OrganizationMixin
+from npdb.external.neurodata.gitea import GiteaProvider
+from npdb.providers.model import NeurobagelProvider
+from npdb.providers.neurobagel import BagelMixin
+from npdb.providers.neurodata import OrganizationMixin
 
 
-class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
+class DataNeuroPolyMTL(OrganizationMixin, GiteaProvider):
     def __init__(self, url: str, user: str, token: str, ssl_verify: bool = True):
-        GiteaManager.__init__(
+        GiteaProvider.__init__(
             self, url=url, user=user, token=token, ssl_verify=ssl_verify
         )
         OrganizationMixin.__init__(self, organization="datasets", client=self.client)
@@ -151,9 +151,9 @@ class DataNeuroPolyMTL(OrganizationMixin, GiteaManager):
         return results
 
 
-class BagelNeuroPolyMTL(BagelMixin, NeurobagelManager):
+class BagelNeuroPolyMTL(BagelMixin, NeurobagelProvider):
     def __init__(self, output_dir: str):
-        NeurobagelManager.__init__(self, output_dir)
+        NeurobagelProvider.__init__(self, output_dir)
         BagelMixin.__init__(self, self.db)
 
     # ------------------------------------------------------------------

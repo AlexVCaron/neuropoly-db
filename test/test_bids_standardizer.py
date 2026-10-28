@@ -24,7 +24,7 @@ from npdb.annotation.standardize import (
     validate_bids_sidecar,
 )
 from npdb.automation.mappings.resolvers import MappingResolver
-from npdb.managers.annotation import BIDSStandardizer
+from npdb.providers.annotation import BIDSStandardizer
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "datasets" / "unstandardized_bids"
 

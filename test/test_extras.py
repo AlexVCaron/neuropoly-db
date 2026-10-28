@@ -13,7 +13,7 @@ from npdb.extras import (
     require_executable,
     require_module,
 )
-from npdb.managers.model import GitManager, ProviderName
+from npdb.providers.model import GitProviderBase, ProviderName
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,46 +45,46 @@ def test_provider_fetch_reports_missing_extra(
     monkeypatch, tmp_path, module, extra, factory
 ):
     monkeypatch.setitem(sys.modules, module, None)
-    manager = factory(tmp_path)
+    provider = factory(tmp_path)
     with pytest.raises(MissingExtraError) as err:
-        manager.fetch("identifier", tmp_path / "out")
+        provider.fetch("identifier", tmp_path / "out")
     assert err.value.extra == extra
     assert not (tmp_path / "out").exists()
 
 
 def _kaggle(tmp):
-    from npdb.managers.kaggle import KaggleProviderManager
+    from npdb.providers.kaggle import KaggleProvider
 
-    return KaggleProviderManager(cache_dir=tmp / "cache")
+    return KaggleProvider(cache_dir=tmp / "cache")
 
 
 def _openneuro():
-    from npdb.managers.openneuro import OpenNeuroProviderManager
+    from npdb.providers.openneuro import OpenNeuroProvider
 
-    return OpenNeuroProviderManager()
+    return OpenNeuroProvider()
 
 
 def _zenodo():
-    from npdb.managers.zenodo import ZenodoProviderManager
+    from npdb.providers.zenodo import ZenodoProvider
 
-    return ZenodoProviderManager()
+    return ZenodoProvider()
 
 
 def _midrc():
-    from npdb.managers.midrc import MIDRCProviderManager
+    from npdb.providers.midrc import MIDRCProvider
 
-    return MIDRCProviderManager(credentials_path=None)
+    return MIDRCProvider(credentials_path=None)
 
 
-def test_gitea_manager_reports_missing_extra(monkeypatch):
+def test_gitea_provider_reports_missing_extra(monkeypatch):
     monkeypatch.setattr("npdb.external.neurodata.gitea.gt_client", None)
-    from npdb.factories import GiteaManagerFactory
+    from npdb.factories import GiteaProviderFactory
 
     monkeypatch.setenv("NP_GITEA_APP_URL", "https://example.invalid")
     monkeypatch.setenv("NP_GITEA_APP_USER", "user")
     monkeypatch.setenv("NP_GITEA_APP_TOKEN", "token")
     with pytest.raises(MissingExtraError) as err:
-        GiteaManagerFactory.create_from_env()
+        GiteaProviderFactory.create_from_env()
     assert err.value.extra == "gitea"
 
 
@@ -110,7 +110,7 @@ def test_run_git_requires_executables_without_retry(monkeypatch, cmd, missing):
 
     monkeypatch.setattr("npdb.extras.shutil.which", which)
     with pytest.raises(MissingExecutableError, match=f"'{missing}' on PATH"):
-        GitManager("user", "token")._run_git(cmd, env={}, context="test")
+        GitProviderBase("user", "token")._run_git(cmd, env={}, context="test")
     assert calls.count(missing) == 1
 
 

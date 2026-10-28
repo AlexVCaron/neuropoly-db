@@ -272,26 +272,26 @@ def test_workspace_image_builds_pinned_upstream():
 def test_neurobagel_validation_gate_uses_rust_instead_of_pybids(tmp_path):
     import bagel.cli as bagel_cli
 
-    from npdb.managers.neurobagel import BagelMixin
+    from npdb.providers.neurobagel import BagelMixin
 
     report = {"datasets": [{"errors": 0}]}
-    manager = BagelMixin(Mock(root=str(tmp_path)))
+    provider = BagelMixin(Mock(root=str(tmp_path)))
 
     def invoke(arguments):
         assert arguments[0] == "bids2tsv"
         assert bagel_cli.BIDSLayout(tmp_path, validate=True) == report
         return Mock(exit_code=0)
 
-    manager.cli = Mock()
-    manager.cli.invoke.side_effect = lambda app, arguments: invoke(arguments)
+    provider.cli = Mock()
+    provider.cli.invoke.side_effect = lambda app, arguments: invoke(arguments)
     with (
         patch(
-            "npdb.managers.neurobagel.validate_and_repair_bids_dataset",
+            "npdb.providers.neurobagel.validate_and_repair_bids_dataset",
             return_value={**report, "repair": {"final_report": report}},
         ) as validation,
         patch("bagel.cli.BIDSLayout") as original_layout,
     ):
-        manager.bids2tsv(str(tmp_path), str(tmp_path / "bids.tsv"))
+        provider.bids2tsv(str(tmp_path), str(tmp_path / "bids.tsv"))
         assert bagel_cli.BIDSLayout is original_layout
     validation.assert_called_once_with(str(tmp_path), severity_threshold="warning")
     original_layout.assert_not_called()

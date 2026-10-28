@@ -11,7 +11,7 @@ import pytest
 zget = pytest.importorskip("zenodo_get.zget")
 
 from npdb.cli.helpers import extend_bids_description  # noqa: E402
-from npdb.managers.zenodo import ZenodoProviderManager  # noqa: E402
+from npdb.providers.zenodo import ZenodoProvider  # noqa: E402
 
 WRAPPER = "spine-generic-data-multi-subject-2b5f8f7"
 KEY = "spine-generic/data-multi-subject-r20201130.zip"
@@ -79,7 +79,7 @@ def test_github_release_archive_is_extracted_to_wrapped_bids_root(tmp_path, zeno
     fake = zenodo({KEY: github_release_zip()})
     output = tmp_path / "out" / "zenodo_4299140"
 
-    root = ZenodoProviderManager(cache_dir=tmp_path / "cache").fetch("4299140", output)
+    root = ZenodoProvider(cache_dir=tmp_path / "cache").fetch("4299140", output)
 
     assert root == output / "spine-generic" / WRAPPER
     assert json.loads((root / "dataset_description.json").read_text())["Name"]
@@ -91,10 +91,10 @@ def test_github_release_archive_is_extracted_to_wrapped_bids_root(tmp_path, zeno
 
 def test_cached_archive_is_not_downloaded_again(tmp_path, zenodo):
     fake = zenodo({KEY: github_release_zip()})
-    manager = ZenodoProviderManager(token="secret", cache_dir=tmp_path / "cache")
+    provider = ZenodoProvider(token="secret", cache_dir=tmp_path / "cache")
 
-    manager.fetch("4299140", tmp_path / "first")
-    root = manager.fetch("4299140", tmp_path / "second")
+    provider.fetch("4299140", tmp_path / "first")
+    root = provider.fetch("4299140", tmp_path / "second")
 
     assert fake.downloads == [KEY]
     assert fake.tokens == {"secret"}
@@ -108,7 +108,7 @@ def test_corrupt_cache_entry_is_redownloaded(tmp_path, zenodo):
     cached.parent.mkdir(parents=True)
     cached.write_bytes(b"truncated")
 
-    ZenodoProviderManager(cache_dir=tmp_path / "cache").fetch("4299140", tmp_path / "o")
+    ZenodoProvider(cache_dir=tmp_path / "cache").fetch("4299140", tmp_path / "o")
 
     assert fake.downloads == [KEY]
 
@@ -120,7 +120,7 @@ def test_stale_cache_files_are_not_staged(tmp_path, zenodo):
     stale.write_bytes(b"old")
     output = tmp_path / "out"
 
-    ZenodoProviderManager(cache_dir=tmp_path / "cache").fetch("4299140", output)
+    ZenodoProvider(cache_dir=tmp_path / "cache").fetch("4299140", output)
 
     assert not (output / "old-release.zip").exists()
     assert not (output / "old-release").exists()
@@ -130,7 +130,7 @@ def test_stale_cache_files_are_not_staged(tmp_path, zenodo):
 def test_unsafe_file_keys_are_rejected_before_download(tmp_path, zenodo, key):
     fake = zenodo({key: b"x"})
     with pytest.raises(ValueError, match="Unsafe Zenodo file entry"):
-        ZenodoProviderManager(cache_dir=tmp_path / "cache").fetch("1", tmp_path / "o")
+        ZenodoProvider(cache_dir=tmp_path / "cache").fetch("1", tmp_path / "o")
     assert fake.downloads == []
     assert not (tmp_path / "escape.zip").exists()
 
@@ -138,13 +138,13 @@ def test_unsafe_file_keys_are_rejected_before_download(tmp_path, zenodo, key):
 def test_cache_and_output_overlap_is_rejected(tmp_path, zenodo):
     zenodo({KEY: github_release_zip()})
     with pytest.raises(ValueError, match="must not overlap"):
-        ZenodoProviderManager(cache_dir=tmp_path).fetch("1", tmp_path / "zenodo")
+        ZenodoProvider(cache_dir=tmp_path).fetch("1", tmp_path / "zenodo")
 
 
 def test_default_cache_follows_xdg(tmp_path, monkeypatch):
     monkeypatch.delenv("NP_NPDB_CACHE_DIR", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    assert ZenodoProviderManager().cache_dir == tmp_path / "npdb" / "downloads"
+    assert ZenodoProvider().cache_dir == tmp_path / "npdb" / "downloads"
 
 
 def test_cli_converts_from_wrapped_root_inside_output(tmp_path, zenodo, monkeypatch):

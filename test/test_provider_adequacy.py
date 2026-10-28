@@ -5,7 +5,7 @@ Every provider must, through the real CLI:
 - explain each anticipated failure (missing extra, credentials, cache, HTTP 401/403/404,
   network, unusable layout) without a traceback or a bug report.
 
-Only the network boundary (``Manager.fetch`` download step) is faked; unpacking,
+Only the network boundary (``Provider.fetch`` download step) is faked; unpacking,
 preparation, BIDS validation, Neurobagel conversion and error reporting are real.
 Add a ``PROVIDERS`` entry when adding a provider.
 """
@@ -27,13 +27,13 @@ import pytest
 from typer.testing import CliRunner
 
 from npdb.cli.cli import npdb
-from npdb.managers.figshare import FigshareProviderManager
-from npdb.managers.git import GitProviderManager
-from npdb.managers.kaggle import KaggleProviderManager
-from npdb.managers.mendeley import MendeleyProviderManager
-from npdb.managers.midrc import MIDRCProviderManager
-from npdb.managers.openneuro import OpenNeuroProviderManager
-from npdb.managers.zenodo import ZenodoProviderManager
+from npdb.providers.figshare import FigshareProvider
+from npdb.providers.git import GitProvider
+from npdb.providers.kaggle import KaggleProvider
+from npdb.providers.mendeley import MendeleyProvider
+from npdb.providers.midrc import MIDRCProvider
+from npdb.providers.openneuro import OpenNeuroProvider
+from npdb.providers.zenodo import ZenodoProvider
 
 runner = CliRunner()
 
@@ -41,7 +41,7 @@ runner = CliRunner()
 @dataclass
 class Provider:
     command: str
-    manager: type
+    provider: type
     identifier: str
     extra_module: str | None = None
     options: tuple[str, ...] = ()
@@ -51,27 +51,27 @@ class Provider:
 
 
 PROVIDERS = [
-    Provider("git", GitProviderManager, "https://github.com/example/ds.git"),
+    Provider("git", GitProvider, "https://github.com/example/ds.git"),
     Provider(
         "kaggle",
-        KaggleProviderManager,
+        KaggleProvider,
         "user/ds",
         "kagglehub",
         ("--cache-dir", "{tmp}/cache"),
         config_error=((), "--cache-dir"),
     ),
-    Provider("mendeley", MendeleyProviderManager, "yd695ynbdz"),
+    Provider("mendeley", MendeleyProvider, "yd695ynbdz"),
     Provider(
         "midrc",
-        MIDRCProviderManager,
+        MIDRCProvider,
         "dg.MD1R/ee75bf02-33e9-4d89-ba0a-868dd4aec81c",
         "gen3.auth",
         ("--credentials-path", "{tmp}/credentials.json"),
         config_error=((), "credentials"),
     ),
-    Provider("openneuro", OpenNeuroProviderManager, "ds000001", "openneuro"),
-    Provider("zenodo", ZenodoProviderManager, "123456", "zenodo_get"),
-    Provider("figshare", FigshareProviderManager, "123456"),
+    Provider("openneuro", OpenNeuroProvider, "ds000001", "openneuro"),
+    Provider("zenodo", ZenodoProvider, "123456", "zenodo_get"),
+    Provider("figshare", FigshareProvider, "123456"),
 ]
 IDS = [p.command for p in PROVIDERS]
 
@@ -112,7 +112,7 @@ def no_interactive_annotation(request, monkeypatch):
         "test_neurodata_dataset_is_ingestable",
     }:
         return
-    from npdb.managers.annotation import NeurobagelAnnotator
+    from npdb.providers.annotation import NeurobagelAnnotator
 
     async def unexpected(*_, **__):
         raise AssertionError("conversion reached interactive annotation")
@@ -194,7 +194,7 @@ def ingest_patches(stack: ExitStack):
     from bagel import mappings
     from bagel.cli import pheno
 
-    from npdb.managers.annotation import NeurobagelAnnotator
+    from npdb.providers.annotation import NeurobagelAnnotator
 
     dictionary = {
         "participant_id": {
@@ -297,7 +297,7 @@ def test_delivered_dataset_is_ingestable(provider, layout, tmp_path):
         ingest_patches(stack)
         stack.enter_context(
             patch.object(
-                provider.manager,
+                provider.provider,
                 "fetch",
                 deliver({"dataset.zip": bids_archive(layout)}),
             )
@@ -312,7 +312,7 @@ def test_neurodata_dataset_is_ingestable(tmp_path):
         with zipfile.ZipFile(io.BytesIO(bids_archive())) as archive:
             archive.extractall(local_path)
 
-    manager = type(
+    provider = type(
         "NeuroData",
         (),
         {
@@ -327,7 +327,7 @@ def test_neurodata_dataset_is_ingestable(tmp_path):
         stack.enter_context(patch("npdb.cli.cli._load_env"))
         stack.enter_context(
             patch(
-                "npdb.cli.cli.GiteaManagerFactory.create_from_env", return_value=manager
+                "npdb.cli.cli.GiteaProviderFactory.create_from_env", return_value=provider
             )
         )
         result = runner.invoke(
@@ -385,7 +385,7 @@ REMOTE_FAILURES = [
     ("case", "exc", "fragments"), REMOTE_FAILURES, ids=[c[0] for c in REMOTE_FAILURES]
 )
 def test_remote_failures_are_explained(provider, case, exc, fragments, tmp_path):
-    with patch.object(provider.manager, "fetch", fail_with(exc)):
+    with patch.object(provider.provider, "fetch", fail_with(exc)):
         result = runner.invoke(npdb, args(provider, tmp_path))
     assert_explained(result, *fragments, "Development-Provider-")
 
@@ -393,7 +393,7 @@ def test_remote_failures_are_explained(provider, case, exc, fragments, tmp_path)
 @pytest.mark.parametrize("provider", PROVIDERS, ids=IDS)
 def test_unusable_layout_is_explained(provider, tmp_path):
     payload = {"README.md": b"not a BIDS dataset"}
-    with patch.object(provider.manager, "fetch", deliver(payload)):
+    with patch.object(provider.provider, "fetch", deliver(payload)):
         result = runner.invoke(npdb, args(provider, tmp_path))
     assert_explained(result)
 
@@ -414,10 +414,10 @@ def test_download_uses_the_ingestion_provider(provider, tmp_path):
     with (
         patch("npdb.cli.cli._load_env"),
         patch(
-            "npdb.cli.cli.GiteaManagerFactory.create_from_env",
+            "npdb.cli.cli.GiteaProviderFactory.create_from_env",
             side_effect=ConfigurationError("offline"),
         ),
-        patch("npdb.factories.ProviderManagerFactory.create") as create,
+        patch("npdb.factories.ProviderFactory.create") as create,
     ):
         runner.invoke(npdb, ["download", str(tsv), "-o", str(tmp_path / "dl")])
     create.assert_called_once()

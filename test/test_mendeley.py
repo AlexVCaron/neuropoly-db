@@ -11,8 +11,8 @@ import pytest
 from typer.testing import CliRunner
 
 from npdb.cli.observers import DownloadObserver
-from npdb.factories import ProviderManagerFactory
-from npdb.managers.mendeley import MendeleyProviderManager
+from npdb.factories import ProviderFactory
+from npdb.providers.mendeley import MendeleyProvider
 
 PUBLIC = "https://data.mendeley.com/public-api/datasets/yd695ynbdz"
 AUTH = "https://api.mendeley.com/datasets/yd695ynbdz"
@@ -97,8 +97,8 @@ def test_public_fetch_streams_redirect_and_selects_wrapped_bids_root(
         return httpx.Response(200, stream=Chunks(content))
 
     transport(handler)
-    manager = MendeleyProviderManager(access_token=token)
-    result = manager.fetch("yd695ynbdz", tmp_path)
+    provider = MendeleyProvider(access_token=token)
+    result = provider.fetch("yd695ynbdz", tmp_path)
     assert result == tmp_path / "Spinal_fMRI_UpperLimb"
     assert (
         result / "sub-13/ses-02/anat/sub-13_ses-02_T2w.nii.gz"
@@ -108,7 +108,7 @@ def test_public_fetch_streams_redirect_and_selects_wrapped_bids_root(
     )
     assert not (tmp_path / "dataset.zip").exists()
     assert not (tmp_path / "derivatives").exists()
-    assert manager.access_type == "public"
+    assert provider.access_type == "public"
     assert [str(request.url) for request in requests] == [PUBLIC, DOWNLOAD, STORAGE]
 
 
@@ -130,9 +130,9 @@ def test_restricted_metadata_uses_token_only_on_authenticated_endpoint(
         return httpx.Response(200, stream=Chunks(content))
 
     transport(handler)
-    manager = MendeleyProviderManager(access_token="access-token")
-    assert manager.fetch("yd695ynbdz", tmp_path) == tmp_path
-    assert manager.access_type == "restricted"
+    provider = MendeleyProvider(access_token="access-token")
+    assert provider.fetch("yd695ynbdz", tmp_path) == tmp_path
+    assert provider.access_type == "restricted"
 
 
 @pytest.mark.parametrize("stage", ["metadata", "download", "authenticated"])
@@ -146,11 +146,11 @@ def test_access_denied_is_actionable(tmp_path, monkeypatch, transport, stage, st
         return httpx.Response(status)
 
     transport(handler)
-    manager = MendeleyProviderManager(
+    provider = MendeleyProvider(
         access_token="invalid-token" if stage == "authenticated" else None
     )
     with pytest.raises(PermissionError, match="NP_MENDELEY_ACCESS_TOKEN"):
-        manager.fetch("yd695ynbdz", tmp_path)
+        provider.fetch("yd695ynbdz", tmp_path)
     assert not list(tmp_path.glob("*.zip"))
     assert not list(tmp_path.glob(".*.part"))
 
@@ -178,10 +178,10 @@ def test_failed_download_preserves_previous_file_and_cleans_partial(
 
     transport(handler)
     with (
-        patch.object(MendeleyProviderManager, "prepare_fetched") as prepare,
+        patch.object(MendeleyProvider, "prepare_fetched") as prepare,
         pytest.raises((ValueError, httpx.ReadError, httpx.HTTPStatusError)),
     ):
-        MendeleyProviderManager().fetch("yd695ynbdz", tmp_path)
+        MendeleyProvider().fetch("yd695ynbdz", tmp_path)
     prepare.assert_not_called()
     assert target.read_bytes() == b"previous"
     assert sorted(path.name for path in tmp_path.iterdir()) == ["dataset.zip"]
@@ -195,7 +195,7 @@ def test_unsafe_download_names_are_rejected(tmp_path, transport, name):
     payload["files"][0]["filename"] = name
     transport(lambda request: httpx.Response(200, json=payload))
     with pytest.raises(ValueError, match="Unsafe Mendeley filename"):
-        MendeleyProviderManager().fetch("yd695ynbdz", tmp_path)
+        MendeleyProvider().fetch("yd695ynbdz", tmp_path)
     assert not list(tmp_path.iterdir())
 
 
@@ -216,14 +216,14 @@ def test_incomplete_metadata_is_not_silently_skipped(tmp_path, transport, proble
 
     transport(handler)
     with pytest.raises((ValueError, FileExistsError)):
-        MendeleyProviderManager().fetch("yd695ynbdz", tmp_path)
+        MendeleyProvider().fetch("yd695ynbdz", tmp_path)
 
 
 def test_multiple_wrapped_datasets_are_rejected(tmp_path):
     for name in ("first", "second"):
         (tmp_path / name / "sub-01").mkdir(parents=True)
     with pytest.raises(ValueError, match="Multiple dataset roots"):
-        MendeleyProviderManager().prepare(tmp_path)
+        MendeleyProvider().prepare(tmp_path)
 
 
 def test_auxiliary_subject_examples_are_not_selected_as_datasets(tmp_path):
@@ -238,7 +238,7 @@ def test_auxiliary_subject_examples_are_not_selected_as_datasets(tmp_path):
         "__MACOSX",
     ):
         (tmp_path / name / "example/sub-99").mkdir(parents=True)
-    assert MendeleyProviderManager().prepare(tmp_path) == actual
+    assert MendeleyProvider().prepare(tmp_path) == actual
     assert "sub-99" not in (actual / "participants.tsv").read_text()
 
 
@@ -247,7 +247,7 @@ def test_flat_rawdata_and_existing_participants_are_preserved(tmp_path):
     (rawdata / "sub-01").mkdir(parents=True)
     table = b"participant_id\tage\tsex\nsub-01\t30\tF\n"
     (rawdata / "participants.tsv").write_bytes(table)
-    assert MendeleyProviderManager().prepare(tmp_path) == tmp_path
+    assert MendeleyProvider().prepare(tmp_path) == tmp_path
     assert (tmp_path / "participants.tsv").read_bytes() == table
     assert (tmp_path / "sub-01").is_dir()
     assert not rawdata.exists()
@@ -263,7 +263,7 @@ def test_corrupt_downloaded_archive_is_retained(tmp_path, transport):
 
     transport(handler)
     with pytest.raises(zipfile.BadZipFile):
-        MendeleyProviderManager().fetch("yd695ynbdz", tmp_path)
+        MendeleyProvider().fetch("yd695ynbdz", tmp_path)
     assert (tmp_path / "dataset.zip").read_bytes() == content
 
 
@@ -277,7 +277,7 @@ def test_metadata_http_errors_are_preserved(tmp_path, transport, status):
 
     transport(handler)
     with pytest.raises(httpx.HTTPStatusError) as error:
-        MendeleyProviderManager().fetch("yd695ynbdz", tmp_path)
+        MendeleyProvider().fetch("yd695ynbdz", tmp_path)
     assert error.value.response.status_code == status
     assert len(requests) == 1
 
@@ -348,11 +348,11 @@ def test_cache_survives_extraction_and_reuses_content_across_redirect_urls(
     payload = metadata(content)
     requests = serve(transport, payload, content)
     cache = tmp_path / "cache"
-    manager = MendeleyProviderManager(cache_dir=cache)
+    provider = MendeleyProvider(cache_dir=cache)
     observer = Mock(spec=DownloadObserver)
-    manager.add_download_observer(observer)
+    provider.add_download_observer(observer)
 
-    first_root = manager.fetch("yd695ynbdz", tmp_path / "first")
+    first_root = provider.fetch("yd695ynbdz", tmp_path / "first")
 
     cached = next(cache.rglob("dataset.zip"))
     assert cached.read_bytes() == content
@@ -362,7 +362,7 @@ def test_cache_survives_extraction_and_reuses_content_across_redirect_urls(
     requests.clear()
     payload["files"][0]["content_details"]["download_url"] = "https://new.example/file"
 
-    second_root = manager.fetch("yd695ynbdz", tmp_path / "second")
+    second_root = provider.fetch("yd695ynbdz", tmp_path / "second")
 
     assert [str(request.url) for request in requests] == [PUBLIC]
     assert (second_root / "participants.tsv").read_bytes() == (
@@ -387,25 +387,25 @@ def test_cache_survives_extraction_and_reuses_content_across_redirect_urls(
 def test_preparation_failure_keeps_cache_for_retry(tmp_path, transport):
     content = bundle()
     requests = serve(transport, metadata(content), content)
-    manager = MendeleyProviderManager()
-    cache = manager.cache_dir
+    provider = MendeleyProvider()
+    cache = provider.cache_dir
 
     with (
-        patch.object(manager, "prepare_fetched", side_effect=ValueError("preparation")),
+        patch.object(provider, "prepare_fetched", side_effect=ValueError("preparation")),
         pytest.raises(ValueError, match="preparation"),
     ):
-        manager.fetch("yd695ynbdz", tmp_path / "out")
+        provider.fetch("yd695ynbdz", tmp_path / "out")
 
     assert next(cache.rglob("dataset.zip")).read_bytes() == content
 
     requests.clear()
-    root = MendeleyProviderManager().fetch("yd695ynbdz", tmp_path / "out")
+    root = MendeleyProvider().fetch("yd695ynbdz", tmp_path / "out")
 
     assert [str(request.url) for request in requests] == [PUBLIC]
     assert (root / "participants.tsv").exists()
 
     requests.clear()
-    MendeleyProviderManager().fetch("yd695ynbdz", tmp_path / "retry")
+    MendeleyProvider().fetch("yd695ynbdz", tmp_path / "retry")
 
     assert [str(request.url) for request in requests] == [PUBLIC]
     assert next(cache.rglob("dataset.zip")).read_bytes() == content
@@ -420,15 +420,15 @@ def test_corrupt_cache_is_recovered_from_verified_target_or_download(
     payload = metadata(content, "participants.tsv")
     requests = serve(transport, payload, content)
     cache = tmp_path / "cache"
-    manager = MendeleyProviderManager(cache_dir=cache)
-    manager.fetch("yd695ynbdz", tmp_path / "out")
+    provider = MendeleyProvider(cache_dir=cache)
+    provider.fetch("yd695ynbdz", tmp_path / "out")
     cached = next(cache.rglob("participants.tsv"))
     cached.write_bytes(b"x" * len(content) if corruption == "same-size" else b"x")
     if not valid_target:
         (tmp_path / "out/participants.tsv").write_bytes(b"x" * len(content))
     requests.clear()
 
-    manager.fetch("yd695ynbdz", tmp_path / "out")
+    provider.fetch("yd695ynbdz", tmp_path / "out")
 
     assert [str(request.url) for request in requests] == (
         [PUBLIC] if valid_target else [PUBLIC, DOWNLOAD]
@@ -442,14 +442,14 @@ def test_metadata_changes_do_not_reuse_stale_cache(tmp_path, transport):
     payload = metadata(content, "participants.tsv")
     requests = serve(transport, payload, content)
     cache = tmp_path / "cache"
-    manager = MendeleyProviderManager(cache_dir=cache)
-    manager.fetch("yd695ynbdz", tmp_path / "out")
+    provider = MendeleyProvider(cache_dir=cache)
+    provider.fetch("yd695ynbdz", tmp_path / "out")
 
     content = b"participant_id\nsub-02\n"
     payload = metadata(content, "participants.tsv")
     requests = serve(transport, payload, content)
 
-    manager.fetch("yd695ynbdz", tmp_path / "out")
+    provider.fetch("yd695ynbdz", tmp_path / "out")
 
     assert [str(request.url) for request in requests] == [PUBLIC, DOWNLOAD]
     assert (tmp_path / "out/participants.tsv").read_bytes() == content
@@ -464,12 +464,12 @@ def test_insufficient_integrity_metadata_bypasses_cache(tmp_path, transport, mis
         del payload["files"][0]["content_details"][key]
     requests = serve(transport, payload, content)
     cache = tmp_path / "cache"
-    manager = MendeleyProviderManager(cache_dir=cache)
+    provider = MendeleyProvider(cache_dir=cache)
     observer = Mock(spec=DownloadObserver)
-    manager.add_download_observer(observer)
+    provider.add_download_observer(observer)
 
-    manager.fetch("yd695ynbdz", tmp_path / "out")
-    manager.fetch("yd695ynbdz", tmp_path / "out")
+    provider.fetch("yd695ynbdz", tmp_path / "out")
+    provider.fetch("yd695ynbdz", tmp_path / "out")
 
     assert [str(request.url) for request in requests] == [
         PUBLIC,
@@ -492,17 +492,17 @@ def test_interrupted_cache_download_does_not_publish_partial(tmp_path, transport
     output = tmp_path / "out"
     output.mkdir()
     (output / "dataset.zip").write_bytes(b"previous")
-    manager = MendeleyProviderManager(cache_dir=cache)
+    provider = MendeleyProvider(cache_dir=cache)
 
     with pytest.raises(httpx.ReadError):
-        manager.fetch("yd695ynbdz", output)
+        provider.fetch("yd695ynbdz", output)
 
     assert not list(cache.rglob("*.zip"))
     assert not list(cache.rglob("*.part"))
     assert (output / "dataset.zip").read_bytes() == b"previous"
 
     requests = serve(transport, payload, content)
-    manager.fetch("yd695ynbdz", output)
+    provider.fetch("yd695ynbdz", output)
 
     assert [str(request.url) for request in requests] == [PUBLIC, DOWNLOAD]
     assert next(cache.rglob("dataset.zip")).read_bytes() == content
@@ -515,8 +515,8 @@ def test_failed_staging_preserves_cache_and_previous_destination(
     content = b"participant_id\nsub-01\n"
     requests = serve(transport, metadata(content, "participants.tsv"), content)
     cache = tmp_path / "cache"
-    manager = MendeleyProviderManager(cache_dir=cache)
-    manager.fetch("yd695ynbdz", tmp_path / "first")
+    provider = MendeleyProvider(cache_dir=cache)
+    provider.fetch("yd695ynbdz", tmp_path / "first")
     output = tmp_path / "second"
     output.mkdir()
     target = output / "participants.tsv"
@@ -529,10 +529,10 @@ def test_failed_staging_preserves_cache_and_previous_destination(
             raise OSError("disk full")
 
     with (
-        patch("npdb.managers.mendeley.shutil.copyfileobj", side_effect=broken_copy),
+        patch("npdb.providers.mendeley.shutil.copyfileobj", side_effect=broken_copy),
         pytest.raises(OSError if failure == "io" else ValueError),
     ):
-        manager.fetch("yd695ynbdz", output)
+        provider.fetch("yd695ynbdz", output)
 
     assert target.read_bytes() == b"previous"
     assert next(cache.rglob("participants.tsv")).read_bytes() == content
@@ -551,7 +551,7 @@ def test_cache_and_output_overlap_is_rejected(tmp_path, transport, overlap):
     requests = serve(transport, metadata(bundle()), bundle())
 
     with pytest.raises(ValueError, match="must not overlap"):
-        MendeleyProviderManager(cache_dir=cache).fetch("yd695ynbdz", output)
+        MendeleyProvider(cache_dir=cache).fetch("yd695ynbdz", output)
 
     assert not requests
 
@@ -564,9 +564,9 @@ def test_symlink_destinations_are_rejected(tmp_path, transport, destination):
     outside.mkdir()
     content = b"participant_id\nsub-01\n"
     requests = serve(transport, metadata(content, "participants.tsv"), content)
-    manager = MendeleyProviderManager(cache_dir=cache)
+    provider = MendeleyProvider(cache_dir=cache)
     if destination == "cache-entry":
-        manager.fetch("yd695ynbdz", output)
+        provider.fetch("yd695ynbdz", output)
         entry = next(cache.rglob("participants.tsv"))
         entry.unlink()
         entry.symlink_to(outside / "target")
@@ -580,7 +580,7 @@ def test_symlink_destinations_are_rejected(tmp_path, transport, destination):
         (output / "participants.tsv").symlink_to(outside / "target")
 
     with pytest.raises(ValueError, match="symlink destination"):
-        manager.fetch("yd695ynbdz", output)
+        provider.fetch("yd695ynbdz", output)
 
     assert not list(outside.iterdir())
     assert all(str(request.url) == PUBLIC for request in requests)
@@ -590,25 +590,25 @@ def test_disk_space_checks_include_cache_and_staging(tmp_path, transport):
     content = b"participant_id\nsub-01\n"
     requests = serve(transport, metadata(content, "participants.tsv"), content)
     cache = tmp_path / "cache"
-    manager = MendeleyProviderManager(cache_dir=cache)
+    provider = MendeleyProvider(cache_dir=cache)
     with (
         patch(
-            "npdb.managers.mendeley.shutil.disk_usage",
+            "npdb.providers.mendeley.shutil.disk_usage",
             return_value=SimpleNamespace(free=2 * len(content) - 1),
         ),
         pytest.raises(OSError, match=f"need {2 * len(content)} bytes"),
     ):
-        manager.fetch("yd695ynbdz", tmp_path / "out")
+        provider.fetch("yd695ynbdz", tmp_path / "out")
 
     assert [str(request.url) for request in requests] == [PUBLIC]
 
-    manager.fetch("yd695ynbdz", tmp_path / "out")
+    provider.fetch("yd695ynbdz", tmp_path / "out")
     requests.clear()
     with patch(
-        "npdb.managers.mendeley.shutil.disk_usage",
+        "npdb.providers.mendeley.shutil.disk_usage",
         return_value=SimpleNamespace(free=len(content)),
     ):
-        manager.fetch("yd695ynbdz", tmp_path / "second")
+        provider.fetch("yd695ynbdz", tmp_path / "second")
 
     assert [str(request.url) for request in requests] == [PUBLIC]
 
@@ -638,10 +638,10 @@ def test_separate_cache_volume_is_checked_independently(tmp_path, transport):
 
     with (
         patch.object(type(cache), "stat", stat),
-        patch("npdb.managers.mendeley.shutil.disk_usage", side_effect=disk_usage),
+        patch("npdb.providers.mendeley.shutil.disk_usage", side_effect=disk_usage),
         pytest.raises(OSError, match=f"need {len(content)} bytes"),
     ):
-        MendeleyProviderManager(cache_dir=cache).fetch("yd695ynbdz", output)
+        MendeleyProvider(cache_dir=cache).fetch("yd695ynbdz", output)
 
     assert spaces == [output, cache]
     assert [str(request.url) for request in requests] == [PUBLIC]
@@ -667,7 +667,7 @@ def test_invalid_integrity_metadata_fails_before_download(
     cache = tmp_path / "cache"
 
     with pytest.raises(ValueError, match="Invalid Mendeley"):
-        MendeleyProviderManager(cache_dir=cache).fetch("yd695ynbdz", tmp_path / "out")
+        MendeleyProvider(cache_dir=cache).fetch("yd695ynbdz", tmp_path / "out")
 
     assert [str(request.url) for request in requests] == [PUBLIC]
     assert not list(cache.rglob("participants.tsv"))
@@ -677,7 +677,7 @@ def test_cache_does_not_bypass_authorization(tmp_path, transport):
     content = b"participant_id\nsub-01\n"
     cache = tmp_path / "cache"
     serve(transport, metadata(content, "participants.tsv"), content)
-    MendeleyProviderManager(cache_dir=cache).fetch("yd695ynbdz", tmp_path / "first")
+    MendeleyProvider(cache_dir=cache).fetch("yd695ynbdz", tmp_path / "first")
 
     requests = []
 
@@ -687,7 +687,7 @@ def test_cache_does_not_bypass_authorization(tmp_path, transport):
 
     transport(deny)
     with pytest.raises(PermissionError):
-        MendeleyProviderManager(cache_dir=cache).fetch(
+        MendeleyProvider(cache_dir=cache).fetch(
             "yd695ynbdz", tmp_path / "second"
         )
 
@@ -699,16 +699,16 @@ def test_factory_wires_cache_and_explicit_path_overrides_environment(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("NP_NPDB_CACHE_DIR", str(tmp_path / "env-cache"))
-    explicit = ProviderManagerFactory.create("mendeley", cache_dir=tmp_path / "cache")
+    explicit = ProviderFactory.create("mendeley", cache_dir=tmp_path / "cache")
     assert explicit.cache_dir == tmp_path / "cache"
-    from_env = ProviderManagerFactory.create("mendeley")
+    from_env = ProviderFactory.create("mendeley")
     assert from_env.cache_dir == tmp_path / "env-cache"
 
 
 @pytest.mark.parametrize("xdg", [True, False])
 def test_default_cache_uses_xdg_or_home(tmp_path, monkeypatch, xdg):
     monkeypatch.delenv("NP_NPDB_CACHE_DIR", raising=False)
-    monkeypatch.setattr("npdb.managers.mendeley.Path.home", lambda: tmp_path / "home")
+    monkeypatch.setattr("npdb.providers.mendeley.Path.home", lambda: tmp_path / "home")
     if xdg:
         monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
         root = tmp_path / "xdg"
@@ -716,7 +716,7 @@ def test_default_cache_uses_xdg_or_home(tmp_path, monkeypatch, xdg):
         monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
         root = tmp_path / "home/.cache"
 
-    assert MendeleyProviderManager().cache_dir == root / "npdb/downloads"
+    assert MendeleyProvider().cache_dir == root / "npdb/downloads"
 
 
 def test_verified_existing_archive_is_adopted_without_download(tmp_path, transport):
@@ -725,17 +725,17 @@ def test_verified_existing_archive_is_adopted_without_download(tmp_path, transpo
     output = tmp_path / "out"
     output.mkdir()
     (output / "dataset.zip").write_bytes(content)
-    manager = MendeleyProviderManager()
+    provider = MendeleyProvider()
     observer = Mock(spec=DownloadObserver)
-    manager.add_download_observer(observer)
+    provider.add_download_observer(observer)
     with patch(
-        "npdb.managers.mendeley.shutil.disk_usage",
+        "npdb.providers.mendeley.shutil.disk_usage",
         return_value=SimpleNamespace(free=len(content)),
     ):
-        root = manager.fetch("yd695ynbdz", output)
+        root = provider.fetch("yd695ynbdz", output)
     assert [str(request.url) for request in requests] == [PUBLIC]
     assert (root / "participants.tsv").exists()
-    assert next(manager.cache_dir.rglob("dataset.zip")).read_bytes() == content
+    assert next(provider.cache_dir.rglob("dataset.zip")).read_bytes() == content
     assert not (output / "dataset.zip").exists()
     assert any(
         "Reusing verified download" in call.args[1]

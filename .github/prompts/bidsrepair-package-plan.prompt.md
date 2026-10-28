@@ -24,7 +24,7 @@ Dependency direction:
 npdb -> bidsrepair -> standard library / PyBIDS / Rust validator
 ```
 
-`bidsrepair` must not import `npdb`, Bagel, provider managers, browser automation,
+`bidsrepair` must not import `npdb`, Bagel, providers, browser automation,
 or NeuroPoly vocabulary configuration.
 
 Separate BIDS structure and repair from provider-specific interpretation,
@@ -32,19 +32,19 @@ Neurobagel annotation policy, and conversion orchestration.
 
 ## Source inventory and disposition
 
-| Current source                                                       | Responsibility                                                                                                     | Disposition                                                                      |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `src/npdb/bids_repair.py`                                          | Repair planning, structural rules, filename associations, path references, safe application, journals and recovery | Move completely                                                                  |
-| `src/npdb/external/bids.py`                                        | Rust validator invocation, structured reports, strict validation, automatic repair/revalidation                    | Move completely; separate validator execution from workflow orchestration        |
-| `prepare_provider_dataset` in `src/npdb/managers/preparation.py` | Layout normalization, subject discovery and missing participants-table generation                                  | Extract into `bidsrepair`; retain provider orchestration in `npdb`           |
-| Wrapped-root selection in `src/npdb/managers/mendeley.py`          | Discovering a BIDS dataset inside downloaded content                                                               | Extract generic discovery; retain provider-specific exclusions and error context |
-| `src/npdb/annotation/standardize.py`                               | Mixed structural sidecar/table operations and mapping-based standardization                                        | Split selectively; do not move wholesale                                         |
-| `src/npdb/annotation/autofix.py`                                   | Mixed generic table cleanup and Neurobagel annotation repair                                                       | Extract generic table operations only                                            |
-| `src/npdb/annotation/preflight.py`                                 | Bagel-supported suffix checks and phenotype/imaging ID comparison                                                  | Keep in `npdb`                                                                 |
-| `src/npdb/managers/midrc_bids.py`                                  | MIDRC clinical joins, acquisition interpretation and DICOM conversion                                              | Keep in `npdb`, consuming shared BIDS helpers                                  |
-| `extend_bids_description` in `src/npdb/cli/helpers.py`           | Neurobagel repository/access metadata enrichment                                                                   | Keep in `npdb`                                                                 |
-| `BIDSStandardizer` in `src/npdb/managers/annotation.py`          | Annotation configuration, mapping resolution and provenance orchestration                                          | Keep in `npdb`, delegating structural operations                               |
-| Archive helpers in `src/npdb/managers/preparation.py`              | Safe ZIP/TAR extraction and legacy ZIP offset repair                                                               | Keep in `npdb`; these are download infrastructure                              |
+| Current source | Responsibility | Disposition |
+|---|---|---|
+| `src/npdb/bids_repair.py` | Repair planning, structural rules, filename associations, path references, safe application, journals and recovery | Move completely |
+| `src/npdb/external/bids.py` | Rust validator invocation, structured reports, strict validation, automatic repair/revalidation | Move completely; separate validator execution from workflow orchestration |
+| `prepare_provider_dataset` in `src/npdb/providers/preparation.py` | Layout normalization, subject discovery and missing participants-table generation | Extract into `bidsrepair`; retain provider orchestration in `npdb` |
+| Wrapped-root selection in `src/npdb/providers/mendeley.py` | Discovering a BIDS dataset inside downloaded content | Extract generic discovery; retain provider-specific exclusions and error context |
+| `src/npdb/annotation/standardize.py` | Mixed structural sidecar/table operations and mapping-based standardization | Split selectively; do not move wholesale |
+| `src/npdb/annotation/autofix.py` | Mixed generic table cleanup and Neurobagel annotation repair | Extract generic table operations only |
+| `src/npdb/annotation/preflight.py` | Bagel-supported suffix checks and phenotype/imaging ID comparison | Keep in `npdb` |
+| `src/npdb/providers/midrc_bids.py` | MIDRC clinical joins, acquisition interpretation and DICOM conversion | Keep in `npdb`, consuming shared BIDS helpers |
+| `extend_bids_description` in `src/npdb/cli/helpers.py` | Neurobagel repository/access metadata enrichment | Keep in `npdb` |
+| `BIDSStandardizer` in `src/npdb/providers/annotation.py` | Annotation configuration, mapping resolution and provenance orchestration | Keep in `npdb`, delegating structural operations |
+| Archive helpers in `src/npdb/providers/preparation.py` | Safe ZIP/TAR extraction and legacy ZIP offset repair | Keep in `npdb`; these are download infrastructure |
 
 ## Proposed layout
 
@@ -100,8 +100,8 @@ placeholders and unnecessary abstractions.
 - Update imports in:
   - `src/npdb/cli/cli.py`
   - `src/npdb/cli/facade.py`
-  - `src/npdb/managers/neurobagel.py`
-  - `src/npdb/managers/neuropoly.py`
+  - `src/npdb/providers/neurobagel.py`
+  - `src/npdb/providers/neuropoly.py`
 - Retain thin compatibility wrappers at the old module paths initially.
 - Update tests and mocks to target the actual implementation lookup sites, not
   merely obsolete import paths.
@@ -136,7 +136,7 @@ placeholders and unnecessary abstractions.
 - Root discovery remains deterministic and reports ambiguous roots.
 - Preparation remains separate from validator-driven repair: moving these
   functions must not enable layout changes during every repair pass.
-- Provider managers call shared helpers rather than duplicating their logic.
+- Providers call shared helpers rather than duplicating their logic.
 
 ## Milestone 4: Separate structural tables and sidecars from annotation policy
 

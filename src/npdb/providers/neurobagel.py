@@ -6,7 +6,7 @@ from typer.testing import CliRunner
 
 from bids_repair.validation import BidsSeverity, validate_and_repair_bids_dataset
 from npdb.external.neurobagel.errors import BagelCLIError
-from npdb.managers.model import BagelDB
+from npdb.providers.model import BagelDB
 
 
 class BagelMixin:

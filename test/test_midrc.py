@@ -14,9 +14,9 @@ import pytest
 from typer.testing import CliRunner
 
 from npdb.cli.cli import npdb
-from npdb.factories import ProviderManagerFactory
-from npdb.managers.midrc import MIDRCProviderManager
-from npdb.managers.preparation import unpack_provider_archives
+from npdb.factories import ProviderFactory
+from npdb.providers.midrc import MIDRCProvider
+from npdb.providers.preparation import unpack_provider_archives
 
 GUIDS = [
     "dg.MD1R/ee75bf02-33e9-4d89-ba0a-868dd4aec81c",
@@ -50,15 +50,15 @@ def sdk(monkeypatch):
 @pytest.fixture
 def download_only(monkeypatch):
     monkeypatch.setattr(
-        MIDRCProviderManager, "prepare_fetched", lambda self, path: path
+        MIDRCProvider, "prepare_fetched", lambda self, path: path
     )
 
 
 @pytest.fixture
-def manager(tmp_path, monkeypatch):
+def provider(tmp_path, monkeypatch):
     monkeypatch.delenv("NP_NPDB_CACHE_DIR", raising=False)
     monkeypatch.delenv("NP_MIDRC_CREDENTIALS", raising=False)
-    return MIDRCProviderManager(
+    return MIDRCProvider(
         credentials_path="credentials.json", cache_dir=tmp_path / "cache"
     )
 
@@ -86,16 +86,16 @@ def discovery_response(guids=GUIDS):
 
 
 @pytest.mark.parametrize("identifier", [DATASET, URL, URL.rstrip("/")])
-def test_resolves_all_discovery_links(manager, identifier):
+def test_resolves_all_discovery_links(provider, identifier):
     with patch(
-        "npdb.managers.midrc.httpx.get", return_value=discovery_response()
+        "npdb.providers.midrc.httpx.get", return_value=discovery_response()
     ) as get:
-        assert manager._resolve(identifier) == GUIDS
+        assert provider._resolve(identifier) == GUIDS
 
     get.assert_called_once_with(
         f"https://data.midrc.org/mds/metadata/{DATASET}", timeout=30
     )
-    assert manager.describe(identifier) == (URL, "restricted")
+    assert provider.describe(identifier) == (URL, "restricted")
 
 
 @pytest.mark.parametrize(
@@ -106,31 +106,31 @@ def test_resolves_all_discovery_links(manager, identifier):
         {"files": [{"guid": GUIDS[0]}]},
     ],
 )
-def test_standard_and_legacy_manifests(manager, tmp_path, payload):
+def test_standard_and_legacy_manifests(provider, tmp_path, payload):
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps(payload))
 
-    with patch("npdb.managers.midrc.httpx.get") as get:
-        assert manager._resolve(str(manifest)) == GUIDS[:1]
+    with patch("npdb.providers.midrc.httpx.get") as get:
+        assert provider._resolve(str(manifest)) == GUIDS[:1]
 
     get.assert_not_called()
 
 
-def test_bare_uuid_is_not_a_dataset(manager):
-    assert manager.discovery_id("ee75bf02-33e9-4d89-ba0a-868dd4aec81c") is None
-    assert manager._resolve(GUIDS[0]) == GUIDS[:1]
+def test_bare_uuid_is_not_a_dataset(provider):
+    assert provider.discovery_id("ee75bf02-33e9-4d89-ba0a-868dd4aec81c") is None
+    assert provider._resolve(GUIDS[0]) == GUIDS[:1]
 
 
 @pytest.mark.parametrize(
     "payload", [[], {}, [None], [{}], [{"guid": ""}], {"files": []}]
 )
-def test_invalid_manifests_fail(manager, payload):
+def test_invalid_manifests_fail(provider, payload):
     with pytest.raises(ValueError):
-        manager._manifest_guids(payload)
+        provider._manifest_guids(payload)
 
 
-def test_guids_are_deduplicated(manager):
-    assert manager._manifest_guids([{"guid": GUIDS[0]}, {"did": GUIDS[0]}]) == GUIDS[:1]
+def test_guids_are_deduplicated(provider):
+    assert provider._manifest_guids([{"guid": GUIDS[0]}, {"did": GUIDS[0]}]) == GUIDS[:1]
 
 
 @pytest.mark.parametrize(
@@ -142,23 +142,23 @@ def test_guids_are_deduplicated(manager):
         "https://data.midrc.org/discovery/ABC-123/?token=secret",
     ],
 )
-def test_invalid_discovery_urls_fail_before_network(manager, identifier):
-    with patch("npdb.managers.midrc.httpx.get") as get:
+def test_invalid_discovery_urls_fail_before_network(provider, identifier):
+    with patch("npdb.providers.midrc.httpx.get") as get:
         with pytest.raises(ValueError):
-            manager._resolve(identifier)
+            provider._resolve(identifier)
     get.assert_not_called()
 
 
 @pytest.mark.parametrize(
     "payload", [{}, {"gen3_discovery": {}}, {"gen3_discovery": []}]
 )
-def test_missing_discovery_links_fail(manager, payload):
+def test_missing_discovery_links_fail(provider, payload):
     response = discovery_response()
     response._content = json.dumps(payload).encode()
 
-    with patch("npdb.managers.midrc.httpx.get", return_value=response):
+    with patch("npdb.providers.midrc.httpx.get", return_value=response):
         with pytest.raises(ValueError):
-            manager._resolve(DATASET)
+            provider._resolve(DATASET)
 
 
 def test_dataset_requires_cache_and_credentials(tmp_path, monkeypatch):
@@ -166,27 +166,27 @@ def test_dataset_requires_cache_and_credentials(tmp_path, monkeypatch):
     monkeypatch.delenv("NP_MIDRC_CREDENTIALS", raising=False)
 
     with pytest.raises(ValueError, match="credentials"):
-        MIDRCProviderManager().fetch(DATASET, tmp_path)
+        MIDRCProvider().fetch(DATASET, tmp_path)
     with pytest.raises(ValueError, match="cache directory"):
-        MIDRCProviderManager(credentials_path="creds")._resolve(DATASET)
+        MIDRCProvider(credentials_path="creds")._resolve(DATASET)
 
 
-def test_manifest_missing_file_is_not_a_guid(manager, tmp_path):
+def test_manifest_missing_file_is_not_a_guid(provider, tmp_path):
     with pytest.raises(FileNotFoundError):
-        manager._resolve(str(tmp_path / "missing.json"))
+        provider._resolve(str(tmp_path / "missing.json"))
 
 
-def test_local_manifest_named_like_dataset_takes_precedence(manager, tmp_path):
+def test_local_manifest_named_like_dataset_takes_precedence(provider, tmp_path):
     manifest = tmp_path / "ABC-123"
     manifest.write_text(json.dumps([{"object_id": GUIDS[0]}]))
 
-    assert manager.discovery_id(str(manifest)) is None
-    assert manager._resolve(str(manifest)) == GUIDS[:1]
+    assert provider.discovery_id(str(manifest)) is None
+    assert provider._resolve(str(manifest)) == GUIDS[:1]
 
 
 def test_factory_passes_cache(tmp_path):
     assert (
-        ProviderManagerFactory.create("midrc", cache_dir=tmp_path).cache_dir == tmp_path
+        ProviderFactory.create("midrc", cache_dir=tmp_path).cache_dir == tmp_path
     )
 
 
@@ -211,25 +211,25 @@ def response(content=b"archive", status=200):
 
 @pytest.mark.parametrize("reuse", ["download", "cached", "staged"])
 def test_main_progress_counts_files_and_preparation(
-    manager, sdk, tmp_path, download_only, reuse
+    provider, sdk, tmp_path, download_only, reuse
 ):
     from npdb.cli.display import RepoDownloadDisplay, StepStatus
 
     output = tmp_path / "out"
     setup_download(sdk, [record("first.zip"), record("second.zip")] * 2)
     with (
-        patch.object(manager, "_resolve", return_value=GUIDS[:2]),
+        patch.object(provider, "_resolve", return_value=GUIDS[:2]),
         patch(
-            "npdb.managers.midrc.httpx.stream", side_effect=[response(), response()]
+            "npdb.providers.midrc.httpx.stream", side_effect=[response(), response()]
         ) as stream,
     ):
         if reuse != "download":
-            manager.fetch(DATASET, output)
+            provider.fetch(DATASET, output)
             if reuse == "cached":
                 (output / "first.zip").unlink()
                 (output / "second.zip").unlink()
         display = RepoDownloadDisplay()
-        manager.add_download_observer(display)
+        provider.add_download_observer(display)
         steps = []
         original_step = display.on_repo_step
 
@@ -248,9 +248,9 @@ def test_main_progress_counts_files_and_preparation(
 
         with (
             patch.object(display, "on_repo_step", side_effect=update),
-            patch.object(manager, "prepare_fetched", side_effect=prepare),
+            patch.object(provider, "prepare_fetched", side_effect=prepare),
         ):
-            assert manager.fetch(DATASET, output) == output
+            assert provider.fetch(DATASET, output) == output
     assert [(completed, total) for completed, total, _ in steps] == [
         (0, 3),
         (1, 3),
@@ -264,78 +264,78 @@ def test_main_progress_counts_files_and_preparation(
 
 
 def test_streams_signed_url_creates_nested_files_and_reuses_cache(
-    manager, sdk, tmp_path, download_only
+    provider, sdk, tmp_path, download_only
 ):
     data = b"archive"
     metadata = record("nested/bundle.zip", data)
     setup_download(sdk, [metadata, metadata])
     output = tmp_path / "out"
     with patch(
-        "npdb.managers.midrc.httpx.stream", return_value=response(data)
+        "npdb.providers.midrc.httpx.stream", return_value=response(data)
     ) as stream:
-        assert manager.fetch(GUIDS[0], output) == output
+        assert provider.fetch(GUIDS[0], output) == output
         assert (output / "nested/bundle.zip").read_bytes() == data
         (output / "nested/bundle.zip").unlink()
-        manager.fetch(GUIDS[0], output)
+        provider.fetch(GUIDS[0], output)
     assert stream.call_count == 1
     sdk["file"].get_presigned_url.assert_called_once_with(GUIDS[0])
     assert (output / "nested/bundle.zip").read_bytes() == data
-    assert next(manager.cache_dir.rglob("bundle.zip")).read_bytes() == data
-    sdk["file_factory"].assert_called_with(manager.endpoint, sdk["auth"])
+    assert next(provider.cache_dir.rglob("bundle.zip")).read_bytes() == data
+    sdk["file_factory"].assert_called_with(provider.endpoint, sdk["auth"])
 
 
-def test_cache_not_shared_with_staged_file(manager, sdk, tmp_path, download_only):
+def test_cache_not_shared_with_staged_file(provider, sdk, tmp_path, download_only):
     setup_download(sdk, [record()])
     output = tmp_path / "out"
-    with patch("npdb.managers.midrc.httpx.stream", return_value=response()):
-        manager.fetch(GUIDS[0], output)
+    with patch("npdb.providers.midrc.httpx.stream", return_value=response()):
+        provider.fetch(GUIDS[0], output)
 
-    cached = next(manager.cache_dir.rglob("bundle.zip"))
+    cached = next(provider.cache_dir.rglob("bundle.zip"))
     (output / "bundle.zip").write_bytes(b"modified")
 
     assert cached.read_bytes() == b"archive"
 
 
-def test_cache_inside_fetch_directory_is_rejected(manager, sdk, tmp_path):
-    manager.cache_dir = tmp_path / "out" / "cache"
+def test_cache_inside_fetch_directory_is_rejected(provider, sdk, tmp_path):
+    provider.cache_dir = tmp_path / "out" / "cache"
     with pytest.raises(ValueError, match="overlap"):
-        manager.fetch(GUIDS[0], tmp_path / "out")
+        provider.fetch(GUIDS[0], tmp_path / "out")
     sdk["file"].get_presigned_url.assert_not_called()
 
 
-def test_insufficient_space_fails_before_download(manager, sdk, tmp_path):
+def test_insufficient_space_fails_before_download(provider, sdk, tmp_path):
     from collections import namedtuple
 
     setup_download(sdk, [record()])
     usage = namedtuple("Usage", "total used free")(1, 1, 0)
-    with patch("npdb.managers.midrc.shutil.disk_usage", return_value=usage):
+    with patch("npdb.providers.midrc.shutil.disk_usage", return_value=usage):
         with pytest.raises(OSError, match="Insufficient disk space"):
-            manager.fetch(GUIDS[0], tmp_path / "out")
+            provider.fetch(GUIDS[0], tmp_path / "out")
     sdk["file"].get_presigned_url.assert_not_called()
 
 
-def test_corrupt_cache_is_redownloaded(manager, sdk, tmp_path, download_only):
+def test_corrupt_cache_is_redownloaded(provider, sdk, tmp_path, download_only):
     setup_download(sdk, [record(), record()])
     output = tmp_path / "out"
     with patch(
-        "npdb.managers.midrc.httpx.stream", side_effect=[response(), response()]
+        "npdb.providers.midrc.httpx.stream", side_effect=[response(), response()]
     ) as stream:
-        manager.fetch(GUIDS[0], output)
-        next(manager.cache_dir.rglob("bundle.zip")).write_bytes(b"corrupt")
+        provider.fetch(GUIDS[0], output)
+        next(provider.cache_dir.rglob("bundle.zip")).write_bytes(b"corrupt")
         (output / "bundle.zip").unlink()
-        manager.fetch(GUIDS[0], output)
+        provider.fetch(GUIDS[0], output)
     assert stream.call_count == 2
     assert (output / "bundle.zip").read_bytes() == b"archive"
 
 
-def test_existing_different_destination_is_not_overwritten(manager, sdk, tmp_path):
+def test_existing_different_destination_is_not_overwritten(provider, sdk, tmp_path):
     setup_download(sdk, [record()])
     output = tmp_path / "out"
     output.mkdir()
     (output / "bundle.zip").write_bytes(b"other")
 
     with pytest.raises(FileExistsError, match="different content"):
-        manager.fetch(GUIDS[0], output)
+        provider.fetch(GUIDS[0], output)
 
     assert (output / "bundle.zip").read_bytes() == b"other"
     sdk["file"].get_presigned_url.assert_not_called()
@@ -345,107 +345,107 @@ def test_single_guid_without_cache_downloads_directly(
     tmp_path, sdk, monkeypatch, download_only
 ):
     monkeypatch.delenv("NP_NPDB_CACHE_DIR", raising=False)
-    manager = MIDRCProviderManager(credentials_path="credentials.json")
+    provider = MIDRCProvider(credentials_path="credentials.json")
     setup_download(sdk, [record()])
-    with patch("npdb.managers.midrc.httpx.stream", return_value=response()):
-        manager.fetch(GUIDS[0], tmp_path / "out")
+    with patch("npdb.providers.midrc.httpx.stream", return_value=response()):
+        provider.fetch(GUIDS[0], tmp_path / "out")
     assert (tmp_path / "out/bundle.zip").read_bytes() == b"archive"
 
 
 @pytest.mark.parametrize(
     "name", ["../escape.zip", "/escape", "a/../../escape", "a\\b", "a//b", "a/./b"]
 )
-def test_unsafe_index_names_fail_before_transfer(manager, sdk, tmp_path, name):
+def test_unsafe_index_names_fail_before_transfer(provider, sdk, tmp_path, name):
     setup_download(sdk, [record(name)])
     with pytest.raises(ValueError, match="Unsafe"):
-        manager.fetch(GUIDS[0], tmp_path / "out")
+        provider.fetch(GUIDS[0], tmp_path / "out")
     sdk["file"].get_presigned_url.assert_not_called()
 
 
-def test_symlink_output_is_rejected(manager, sdk, tmp_path):
+def test_symlink_output_is_rejected(provider, sdk, tmp_path):
     linked = tmp_path / "linked"
     linked.symlink_to(tmp_path, target_is_directory=True)
 
     with pytest.raises(ValueError, match="symlink"):
-        manager.fetch(GUIDS[0], linked)
+        provider.fetch(GUIDS[0], linked)
 
 
-def test_colliding_names_fail_before_transfer(manager, sdk, tmp_path):
+def test_colliding_names_fail_before_transfer(provider, sdk, tmp_path):
     setup_download(sdk, [record(), record()])
     with patch(
-        "npdb.managers.midrc.httpx.get", return_value=discovery_response(GUIDS[:2])
+        "npdb.providers.midrc.httpx.get", return_value=discovery_response(GUIDS[:2])
     ):
         with pytest.raises(FileExistsError, match="Conflicting"):
-            manager.fetch(DATASET, tmp_path / "out")
+            provider.fetch(DATASET, tmp_path / "out")
     sdk["file"].get_presigned_url.assert_not_called()
 
 
 @pytest.mark.parametrize("data", [b"bad", b"corrupt"])
-def test_integrity_failure_removes_partial_file(manager, sdk, tmp_path, data):
+def test_integrity_failure_removes_partial_file(provider, sdk, tmp_path, data):
     setup_download(sdk, [record()])
-    with patch("npdb.managers.midrc.httpx.stream", return_value=response(data)):
+    with patch("npdb.providers.midrc.httpx.stream", return_value=response(data)):
         with pytest.raises(ValueError, match="size/checksum"):
-            manager.fetch(GUIDS[0], tmp_path / "out")
-    assert not list(manager.cache_dir.rglob("*.part"))
-    assert not list(manager.cache_dir.rglob("bundle.zip"))
+            provider.fetch(GUIDS[0], tmp_path / "out")
+    assert not list(provider.cache_dir.rglob("*.part"))
+    assert not list(provider.cache_dir.rglob("bundle.zip"))
 
 
-def test_oversized_download_stops_and_removes_partial(manager, sdk, tmp_path):
+def test_oversized_download_stops_and_removes_partial(provider, sdk, tmp_path):
     setup_download(sdk, [record()])
     with patch(
-        "npdb.managers.midrc.httpx.stream", return_value=response(b"oversized archive")
+        "npdb.providers.midrc.httpx.stream", return_value=response(b"oversized archive")
     ):
         with pytest.raises(ValueError, match="exceeds indexed size"):
-            manager.fetch(GUIDS[0], tmp_path / "out")
-    assert not list(manager.cache_dir.rglob("*.part"))
+            provider.fetch(GUIDS[0], tmp_path / "out")
+    assert not list(provider.cache_dir.rglob("*.part"))
 
 
-def test_storage_errors_do_not_expose_signed_url(manager, sdk, tmp_path):
+def test_storage_errors_do_not_expose_signed_url(provider, sdk, tmp_path):
     setup_download(sdk, [record()])
     with patch(
-        "npdb.managers.midrc.httpx.stream", return_value=response(status=403)
+        "npdb.providers.midrc.httpx.stream", return_value=response(status=403)
     ) as stream:
         with pytest.raises(RuntimeError, match="storage download failed") as error:
-            manager.fetch(GUIDS[0], tmp_path / "out")
+            provider.fetch(GUIDS[0], tmp_path / "out")
     assert "signature" not in str(error.value)
     assert stream.call_count == 1
 
 
-def test_expired_storage_url_is_renewed_once(manager, sdk, tmp_path, download_only):
+def test_expired_storage_url_is_renewed_once(provider, sdk, tmp_path, download_only):
     setup_download(sdk, [record()])
     expired = response(b"<Error><Code>RequestExpired</Code></Error>", status=403)
 
-    with patch("npdb.managers.midrc.httpx.stream", side_effect=[expired, response()]):
-        manager.fetch(GUIDS[0], tmp_path / "out")
+    with patch("npdb.providers.midrc.httpx.stream", side_effect=[expired, response()]):
+        provider.fetch(GUIDS[0], tmp_path / "out")
 
     assert sdk["file"].get_presigned_url.call_count == 2
 
 
-def test_expired_url_retry_is_bounded(manager, sdk, tmp_path):
+def test_expired_url_retry_is_bounded(provider, sdk, tmp_path):
     setup_download(sdk, [record()])
     expired = b"<Error><Code>ExpiredToken</Code></Error>"
     with patch(
-        "npdb.managers.midrc.httpx.stream",
+        "npdb.providers.midrc.httpx.stream",
         side_effect=[
             response(expired, status=403),
             response(expired, status=403),
         ],
     ):
         with pytest.raises(RuntimeError, match="storage download failed"):
-            manager.fetch(GUIDS[0], tmp_path / "out")
+            provider.fetch(GUIDS[0], tmp_path / "out")
     assert sdk["file"].get_presigned_url.call_count == 2
 
 
 @pytest.mark.parametrize("signed", [None, {}, {"url": "s3://bucket/file"}, {"url": 1}])
-def test_invalid_signed_response(manager, sdk, tmp_path, signed):
+def test_invalid_signed_response(provider, sdk, tmp_path, signed):
     setup_download(sdk, [record()])
     sdk["file"].get_presigned_url.return_value = signed
 
     with pytest.raises(ValueError, match="signed"):
-        manager.fetch(GUIDS[0], tmp_path / "out")
+        provider.fetch(GUIDS[0], tmp_path / "out")
 
 
-def test_authorization_error_is_explicit(manager, sdk, tmp_path):
+def test_authorization_error_is_explicit(provider, sdk, tmp_path):
     from requests import HTTPError, Response
 
     setup_download(sdk, [record()])
@@ -454,7 +454,7 @@ def test_authorization_error_is_explicit(manager, sdk, tmp_path):
     sdk["file"].get_presigned_url.side_effect = HTTPError(response=unauthorized)
 
     with pytest.raises(RuntimeError, match="HTTP 401"):
-        manager.fetch(GUIDS[0], tmp_path / "out")
+        provider.fetch(GUIDS[0], tmp_path / "out")
 
 
 def bundle(supported=True):
@@ -473,7 +473,7 @@ def bundle(supported=True):
 
 @pytest.mark.parametrize("supported", [True, False])
 def test_cli_uses_shared_preparation_and_canonical_url(
-    manager, sdk, tmp_path, supported
+    provider, sdk, tmp_path, supported
 ):
     data = bundle(supported)
     setup_download(sdk, [record(content=data)])
@@ -488,14 +488,14 @@ def test_cli_uses_shared_preparation_and_canonical_url(
         assert (root / "derivatives/masks/sub-01_mask.nii.gz").read_bytes() == b"mask"
         assert (root / "participants.tsv").read_text().endswith("sub-01\t42\tF\n")
         assert not (root / "bundle.zip").exists()
-        assert next(manager.cache_dir.rglob("bundle.zip")).read_bytes() == data
+        assert next(provider.cache_dir.rglob("bundle.zip")).read_bytes() == data
 
     with (
-        patch("npdb.cli.cli.ProviderManagerFactory.create", return_value=manager),
+        patch("npdb.cli.cli.ProviderFactory.create", return_value=provider),
         patch(
-            "npdb.managers.midrc.httpx.get", return_value=discovery_response(GUIDS[:1])
+            "npdb.providers.midrc.httpx.get", return_value=discovery_response(GUIDS[:1])
         ),
-        patch("npdb.managers.midrc.httpx.stream", return_value=response(data)),
+        patch("npdb.providers.midrc.httpx.stream", return_value=response(data)),
         patch("npdb.cli.cli.local2bagel", side_effect=convert) as conversion,
     ):
         result = CliRunner().invoke(
@@ -507,7 +507,7 @@ def test_cli_uses_shared_preparation_and_canonical_url(
                 URL,
                 str(output),
                 "--cache-dir",
-                str(manager.cache_dir),
+                str(provider.cache_dir),
             ],
         )
     if supported:
@@ -520,17 +520,17 @@ def test_cli_uses_shared_preparation_and_canonical_url(
         conversion.assert_not_called()
 
 
-def test_extraction_retains_cached_archives(manager, sdk, tmp_path):
+def test_extraction_retains_cached_archives(provider, sdk, tmp_path):
     data = bundle()
     setup_download(sdk, [record(content=data)])
-    with patch("npdb.managers.midrc.httpx.stream", return_value=response(data)):
-        root = manager.fetch(GUIDS[0], tmp_path / "out")
+    with patch("npdb.providers.midrc.httpx.stream", return_value=response(data)):
+        root = provider.fetch(GUIDS[0], tmp_path / "out")
     unpack_provider_archives(root)
     assert not (root / "bundle.zip").exists()
-    assert next(manager.cache_dir.rglob("bundle.zip")).read_bytes() == data
+    assert next(provider.cache_dir.rglob("bundle.zip")).read_bytes() == data
 
 
-def test_shared_pipeline_produces_real_neurobagel_jsonld(manager, sdk, tmp_path):
+def test_shared_pipeline_produces_real_neurobagel_jsonld(provider, sdk, tmp_path):
     from inspect import signature
 
     import nibabel as nib
@@ -538,7 +538,7 @@ def test_shared_pipeline_produces_real_neurobagel_jsonld(manager, sdk, tmp_path)
     from bagel import mappings
     from bagel.cli import pheno
 
-    from npdb.managers.annotation import NeurobagelAnnotator
+    from npdb.providers.annotation import NeurobagelAnnotator
 
     archive_bytes = io.BytesIO()
     image = nib.Nifti1Image(np.zeros((2, 2, 2), dtype=np.int16), np.eye(4))
@@ -620,11 +620,11 @@ def test_shared_pipeline_produces_real_neurobagel_jsonld(manager, sdk, tmp_path)
     # Bagel captures CLI choices at import time, independently of runtime metadata.
     config_choices = signature(pheno).parameters["config"].default.click_type
     with (
-        patch("npdb.cli.cli.ProviderManagerFactory.create", return_value=manager),
+        patch("npdb.cli.cli.ProviderFactory.create", return_value=provider),
         patch(
-            "npdb.managers.midrc.httpx.get", return_value=discovery_response(GUIDS[:1])
+            "npdb.providers.midrc.httpx.get", return_value=discovery_response(GUIDS[:1])
         ),
-        patch("npdb.managers.midrc.httpx.stream", return_value=response(data)),
+        patch("npdb.providers.midrc.httpx.stream", return_value=response(data)),
         patch.object(NeurobagelAnnotator, "execute", side_effect=annotate),
         patch.object(mappings, "CONFIG_NAMESPACES_MAPPING", namespaces),
         patch.object(mappings, "CONFIG_NAMESPACES_FETCHING_ERR", None),
@@ -649,7 +649,7 @@ def test_shared_pipeline_produces_real_neurobagel_jsonld(manager, sdk, tmp_path)
                 URL,
                 str(output),
                 "--cache-dir",
-                str(manager.cache_dir),
+                str(provider.cache_dir),
                 "--neurobagel-modalities",
             ],
         )
@@ -672,8 +672,8 @@ def test_midrc_structured_metadata_is_prepared_offline(tmp_path):
         )
     with zipfile.ZipFile(source / "Example_annotation.zip", "w") as archive:
         archive.writestr("image.nii.gz", b"image")
-    provider = MIDRCProviderManager()
-    with patch("npdb.managers.midrc.httpx.get") as network:
+    provider = MIDRCProvider()
+    with patch("npdb.providers.midrc.httpx.get") as network:
         extracted = provider.unpack(source, output_dir=tmp_path / "prepared")
         output = provider.prepare(extracted)
     network.assert_not_called()
@@ -698,9 +698,9 @@ def test_midrc_structured_metadata_is_prepared_offline(tmp_path):
         archive.writestr("instance.dcm", b"dicom")
     original_participants = (output / "participants.tsv").read_bytes()
     with (
-        patch("npdb.managers.midrc_bids.extract_archive") as extraction,
-        patch("npdb.managers.midrc_bids.prepare_metadata") as preparation,
-        patch("npdb.managers.midrc_bids.convert_dicom") as conversion,
+        patch("npdb.providers.midrc_bids.extract_archive") as extraction,
+        patch("npdb.providers.midrc_bids.prepare_metadata") as preparation,
+        patch("npdb.providers.midrc_bids.convert_dicom") as conversion,
     ):
         assert provider.prepare_fetched(extracted) == output
     extraction.assert_not_called()
@@ -710,13 +710,13 @@ def test_midrc_structured_metadata_is_prepared_offline(tmp_path):
 
 
 def test_midrc_subject_normalization_rejects_collisions():
-    from npdb.managers.midrc_bids import subject_labels
+    from npdb.providers.midrc_bids import subject_labels
 
     with pytest.raises(ValueError, match="collide"):
         subject_labels({"site-01": {}, "site01": {}})
 
 
-def test_midrc_fetch_reuses_completed_preparation(manager, sdk, tmp_path):
+def test_midrc_fetch_reuses_completed_preparation(provider, sdk, tmp_path):
     bundle = io.BytesIO()
     with zipfile.ZipFile(bundle, "w") as archive:
         archive.writestr(
@@ -727,17 +727,17 @@ def test_midrc_fetch_reuses_completed_preparation(manager, sdk, tmp_path):
     setup_download(sdk, [record("Example_structured.zip", data)] * 2)
     root = tmp_path / "out"
     with patch(
-        "npdb.managers.midrc.httpx.stream", return_value=response(data)
+        "npdb.providers.midrc.httpx.stream", return_value=response(data)
     ) as stream:
-        output = manager.fetch(GUIDS[0], root)
+        output = provider.fetch(GUIDS[0], root)
         nested = root / "sourcedata/midrc/structured/series.uid.zip"
         with zipfile.ZipFile(nested, "w") as archive:
             archive.writestr("instance.dcm", b"dicom")
-        with patch("npdb.managers.midrc_bids.prepare_metadata") as preparation:
-            assert manager.fetch(GUIDS[0], root) == output
+        with patch("npdb.providers.midrc_bids.prepare_metadata") as preparation:
+            assert provider.fetch(GUIDS[0], root) == output
         preparation.assert_not_called()
     assert stream.call_count == 1
-    assert next(manager.cache_dir.rglob("Example_structured.zip")).read_bytes() == data
+    assert next(provider.cache_dir.rglob("Example_structured.zip")).read_bytes() == data
 
 
 @pytest.mark.parametrize(
@@ -784,14 +784,14 @@ def test_midrc_reuses_only_complete_reported_outputs(tmp_path, missing):
     )
     if missing:
         (report if missing == "derivative_report.json" else output / missing).unlink()
-    with patch("npdb.managers.midrc_bids.prepare_metadata") as preparation:
+    with patch("npdb.providers.midrc_bids.prepare_metadata") as preparation:
         if missing is None:
-            assert MIDRCProviderManager().prepare(tmp_path) == output
+            assert MIDRCProvider().prepare(tmp_path) == output
         else:
             with pytest.raises(
                 (FileExistsError, FileNotFoundError), match="incomplete"
             ):
-                MIDRCProviderManager().prepare(tmp_path)
+                MIDRCProvider().prepare(tmp_path)
     preparation.assert_not_called()
     assert (output / "participants.tsv").exists() == (missing != "participants.tsv")
 
@@ -804,16 +804,16 @@ def test_midrc_unpack_rejects_a_conflicting_existing_manifest(tmp_path):
     manifest = staging / "archives.json"
     manifest.write_text(json.dumps({"Name": "Other", "Roles": ["structured"]}))
     with (
-        patch("npdb.managers.midrc_bids.extract_archive") as extraction,
+        patch("npdb.providers.midrc_bids.extract_archive") as extraction,
         pytest.raises(ValueError, match="does not match"),
     ):
-        MIDRCProviderManager().unpack(tmp_path)
+        MIDRCProvider().unpack(tmp_path)
     extraction.assert_not_called()
     assert json.loads(manifest.read_text())["Name"] == "Other"
 
 
 def test_midrc_image_entities_use_uid_links_not_filename_numbers():
-    from npdb.managers.midrc_bids import image_identities
+    from npdb.providers.midrc_bids import image_identities
 
     tables = {
         "case": [{"submitter_id": "site-001"}],
@@ -855,7 +855,7 @@ def test_midrc_image_entities_use_uid_links_not_filename_numbers():
 
 
 def test_midrc_converter_uses_safe_bids_arguments(tmp_path):
-    from npdb.managers.midrc_bids import convert_dicom
+    from npdb.providers.midrc_bids import convert_dicom
 
     converted = tmp_path / "converted"
 
@@ -869,9 +869,9 @@ def test_midrc_converter_uses_safe_bids_arguments(tmp_path):
 
     with (
         patch(
-            "npdb.managers.midrc_bids.shutil.which", return_value="/usr/bin/dcm2niix"
+            "npdb.providers.midrc_bids.shutil.which", return_value="/usr/bin/dcm2niix"
         ),
-        patch("npdb.managers.midrc_bids.subprocess.run", side_effect=convert),
+        patch("npdb.providers.midrc_bids.subprocess.run", side_effect=convert),
     ):
         assert convert_dicom(tmp_path / "dicom", converted) == [
             converted / "image.nii.gz"
@@ -882,7 +882,7 @@ def test_midrc_derivative_preserves_payload_and_uses_raw_entities(tmp_path):
     import nibabel as nib
     import numpy as np
 
-    from npdb.managers.midrc_bids import prepare_derivatives
+    from npdb.providers.midrc_bids import prepare_derivatives
 
     staging = tmp_path / "source"
     masks = staging / "segmentation"
@@ -939,7 +939,7 @@ def test_midrc_annotation_skull_stripping_is_established_from_payload(tmp_path):
     import nibabel as nib
     import numpy as np
 
-    from npdb.managers.midrc_bids import prepare_derivatives
+    from npdb.providers.midrc_bids import prepare_derivatives
 
     staging = tmp_path / "source"
     annotations = staging / "annotation"

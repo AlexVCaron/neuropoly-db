@@ -13,10 +13,10 @@ import httpx
 
 from npdb.errors import ConfigurationError
 from npdb.extras import require_module
-from npdb.managers.model import ProviderManager, ProviderName
+from npdb.providers.model import Provider, ProviderName
 
 
-class MIDRCProviderManager(ProviderManager):
+class MIDRCProvider(Provider):
     provider_name: ClassVar[ProviderName] = ProviderName.MIDRC
     access_type = "restricted"
 
@@ -84,7 +84,7 @@ class MIDRCProviderManager(ProviderManager):
     def unpack(
         self, fetched: str | Path, *, output_dir: str | Path | None = None
     ) -> Path:
-        from npdb.managers.midrc_bids import unpack_midrc
+        from npdb.providers.midrc_bids import unpack_midrc
 
         source = Path(fetched)
         archives = list(source.rglob("*_structured.zip")) if source.is_dir() else []
@@ -105,7 +105,7 @@ class MIDRCProviderManager(ProviderManager):
         return unpack_midrc(source.parent if source.is_file() else source, destination)
 
     def prepare(self, root: str | Path) -> Path:
-        from npdb.managers.midrc_bids import (
+        from npdb.providers.midrc_bids import (
             prepare_derivatives,
             prepare_imaging,
             prepare_metadata,

@@ -12,18 +12,18 @@ from npdb.annotation import AnnotationConfig
 from npdb.factories import (
     AIClientFactory,
     AnnotationConfigFactory,
-    GiteaManagerFactory,
+    GiteaProviderFactory,
     LedgerFactory,
-    ProviderManagerFactory,
+    ProviderFactory,
 )
-from npdb.managers.kaggle import KaggleProviderManager
-from npdb.managers.model import ProviderName
+from npdb.providers.kaggle import KaggleProvider
+from npdb.providers.model import ProviderName
 from npdb.report import RunLedger
 
-# ── GiteaManagerFactory ────────────────────────────────────────────
+# ── GiteaProviderFactory ────────────────────────────────────────────
 
 
-class TestGiteaManagerFactory:
+class TestGiteaProviderFactory:
     def test_raises_when_all_vars_missing(self):
         env = {
             "NP_GITEA_APP_URL": None,
@@ -34,7 +34,7 @@ class TestGiteaManagerFactory:
             for k in ("NP_GITEA_APP_URL", "NP_GITEA_APP_USER", "NP_GITEA_APP_TOKEN"):
                 os.environ.pop(k, None)
             with pytest.raises(ValueError) as exc_info:
-                GiteaManagerFactory.create_from_env()
+                GiteaProviderFactory.create_from_env()
         msg = str(exc_info.value)
         assert "NP_GITEA_APP_URL" in msg
         assert "NP_GITEA_APP_USER" in msg
@@ -48,10 +48,10 @@ class TestGiteaManagerFactory:
         with patch.dict(os.environ, env, clear=False):
             os.environ.pop("NP_GITEA_APP_TOKEN", None)
             with pytest.raises(ValueError) as exc_info:
-                GiteaManagerFactory.create_from_env()
+                GiteaProviderFactory.create_from_env()
         assert "NP_GITEA_APP_TOKEN" in str(exc_info.value)
 
-    def test_creates_manager_with_all_vars(self):
+    def test_creates_provider_with_all_vars(self):
         env = {
             "NP_GITEA_APP_URL": "https://gitea.example.com",
             "NP_GITEA_APP_USER": "testuser",
@@ -62,8 +62,8 @@ class TestGiteaManagerFactory:
             patch("npdb.factories.DataNeuroPolyMTL") as MockMgr,
         ):
             MockMgr.return_value = object()
-            manager = GiteaManagerFactory.create_from_env(ssl_verify=False)
-        assert manager is not None
+            provider = GiteaProviderFactory.create_from_env(ssl_verify=False)
+        assert provider is not None
         MockMgr.assert_called_once_with(
             url="https://gitea.example.com",
             user="testuser",
@@ -77,7 +77,7 @@ class TestGiteaManagerFactory:
             for k in ("NP_GITEA_APP_URL", "NP_GITEA_APP_USER", "NP_GITEA_APP_TOKEN"):
                 os.environ.pop(k, None)
             with pytest.raises(ValueError) as exc_info:
-                GiteaManagerFactory.create_from_env()
+                GiteaProviderFactory.create_from_env()
         msg = str(exc_info.value)
         # All three must appear in a single error
         assert msg.count("NP_GITEA") == 3
@@ -175,21 +175,21 @@ class TestAIClientFactory:
 # ── LedgerFactory ─────────────────────────────────────────────────
 
 
-class TestProviderManagerFactory:
-    def test_creates_kaggle_manager_with_cache_dir(self, tmp_path):
-        manager = ProviderManagerFactory.create("kaggle", cache_dir=tmp_path)
-        assert isinstance(manager, KaggleProviderManager)
-        assert manager.cache_dir == tmp_path
-        assert isinstance(manager.provider_name, ProviderName)
-        assert manager.provider_name == ProviderName.KAGGLE
+class TestProviderFactory:
+    def test_creates_kaggle_provider_with_cache_dir(self, tmp_path):
+        provider = ProviderFactory.create("kaggle", cache_dir=tmp_path)
+        assert isinstance(provider, KaggleProvider)
+        assert provider.cache_dir == tmp_path
+        assert isinstance(provider.provider_name, ProviderName)
+        assert provider.provider_name == ProviderName.KAGGLE
 
     def test_provider_name_enum_is_used_for_provider_selection(self):
-        manager = ProviderManagerFactory.create(ProviderName.OPENNEURO)
-        assert isinstance(manager.provider_name, ProviderName)
-        assert manager.provider_name == ProviderName.OPENNEURO
+        provider = ProviderFactory.create(ProviderName.OPENNEURO)
+        assert isinstance(provider.provider_name, ProviderName)
+        assert provider.provider_name == ProviderName.OPENNEURO
         assert ProviderName("openneuro") == ProviderName.OPENNEURO
 
-    def test_creates_midrc_manager_from_env(self, tmp_path):
+    def test_creates_midrc_provider_from_env(self, tmp_path):
         creds = tmp_path / "credentials.json"
         creds.write_text("{}", encoding="utf-8")
         with patch.dict(
@@ -200,9 +200,9 @@ class TestProviderManagerFactory:
             },
             clear=False,
         ):
-            manager = ProviderManagerFactory.create("midrc")
-        assert manager.credentials_path == str(creds)
-        assert manager.endpoint == "https://data.midrc.org"
+            provider = ProviderFactory.create("midrc")
+        assert provider.credentials_path == str(creds)
+        assert provider.endpoint == "https://data.midrc.org"
 
     def test_creates_figshare_and_zenodo_tokens_from_env(self):
         with patch.dict(
@@ -210,16 +210,16 @@ class TestProviderManagerFactory:
             {"NP_ZENODO_TOKEN": "zenodo-token", "NP_FIGSHARE_TOKEN": "figshare-token"},
             clear=False,
         ):
-            zenodo = ProviderManagerFactory.create("zenodo")
-            figshare = ProviderManagerFactory.create("figshare")
+            zenodo = ProviderFactory.create("zenodo")
+            figshare = ProviderFactory.create("figshare")
         assert zenodo.token == "zenodo-token"
         assert figshare.token == "figshare-token"
 
     def test_cache_error_mentions_large_download_and_env_var(self):
-        manager = KaggleProviderManager(cache_dir=None)
+        provider = KaggleProvider(cache_dir=None)
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ValueError) as exc_info:
-                manager.ensure_cache_dir(required=True)
+                provider.ensure_cache_dir(required=True)
         msg = str(exc_info.value)
         assert "cache" in msg.lower()
         assert "NP_NPDB_CACHE_DIR" in msg

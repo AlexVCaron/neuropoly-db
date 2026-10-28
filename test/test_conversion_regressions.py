@@ -16,7 +16,7 @@ from npdb.annotation.autofix import (
 from npdb.cli.errors import diagnose
 from npdb.external.neurobagel.errors import BagelCLIError
 from npdb.external.neurobagel.schema import convert_to_bagel_schema
-from npdb.managers.neuropoly import BagelNeuroPolyMTL
+from npdb.providers.neuropoly import BagelNeuroPolyMTL
 
 
 @pytest.mark.parametrize("trailing_tabs", [False, True])
@@ -25,7 +25,7 @@ def test_generated_annotations_and_tsv_produce_real_bagel_jsonld(
 ):
     output = tmp_path / "output"
     output.mkdir()
-    manager = BagelNeuroPolyMTL(str(output))
+    provider = BagelNeuroPolyMTL(str(output))
     tsv = output / "phenotypes.tsv"
     annotations = output / "phenotypes_annotations.json"
     end = "\t" if trailing_tabs else ""
@@ -62,7 +62,7 @@ def test_generated_annotations_and_tsv_produce_real_bagel_jsonld(
     description.write_text(
         json.dumps({"Name": "Synthetic public dataset", "AccessType": "public"})
     )
-    manager._preprocess_phenotypes(tsv, annotations, {})
+    provider._preprocess_phenotypes(tsv, annotations, {})
     namespaces = [
         {
             "config_name": "Neurobagel",
@@ -92,7 +92,7 @@ def test_generated_annotations_and_tsv_produce_real_bagel_jsonld(
             return_value={"T2w": "nidm:T2Weighted"},
         ),
     ):
-        manager.bagel_pheno("synthetic", str(tsv), str(annotations), str(description))
+        provider.bagel_pheno("synthetic", str(tsv), str(annotations), str(description))
         bids_table = tmp_path / "bids.tsv"
         bids_table.write_text(
             "sub\tses\tsuffix\tpath\n"
@@ -101,7 +101,7 @@ def test_generated_annotations_and_tsv_produce_real_bagel_jsonld(
                 for sub in ("sub-01", "sub-02", "sub-03")
             )
         )
-        manager.bagel_bids("synthetic", str(bids_table))
+        provider.bagel_bids("synthetic", str(bids_table))
     graph = json.loads((output / "synthetic.jsonld").read_text())
     assert [sample["hasLabel"] for sample in graph["hasSamples"]] == [
         "sub-01",
@@ -202,16 +202,16 @@ def test_nonempty_extra_cells_fail_without_modifying_input(tmp_path, extra):
 
 
 def test_bagel_python_exception_is_reported_and_chained(tmp_path):
-    manager = BagelNeuroPolyMTL(str(tmp_path))
+    provider = BagelNeuroPolyMTL(str(tmp_path))
     underlying = TypeError('can only concatenate str (not "int") to str')
-    manager.cli = Mock()
-    manager.cli.invoke.return_value = SimpleNamespace(
+    provider.cli = Mock()
+    provider.cli.invoke.return_value = SimpleNamespace(
         exit_code=1,
         output="Warning before failure",
         exception=underlying,
     )
     with pytest.raises(BagelCLIError) as caught:
-        manager._run_bagel_cli("pheno")
+        provider._run_bagel_cli("pheno")
     assert "Warning before failure" in caught.value.plain_output
     assert "TypeError: can only concatenate" in caught.value.plain_output
     assert caught.value.__cause__ is underlying
@@ -219,15 +219,15 @@ def test_bagel_python_exception_is_reported_and_chained(tmp_path):
 
 
 def test_bagel_normal_exit_preserves_existing_output(tmp_path):
-    manager = BagelNeuroPolyMTL(str(tmp_path))
-    manager.cli = Mock()
-    manager.cli.invoke.return_value = SimpleNamespace(
+    provider = BagelNeuroPolyMTL(str(tmp_path))
+    provider.cli = Mock()
+    provider.cli.invoke.return_value = SimpleNamespace(
         exit_code=1,
         output="Invalid input",
         exception=SystemExit(1),
     )
     with pytest.raises(BagelCLIError) as caught:
-        manager._run_bagel_cli("pheno")
+        provider._run_bagel_cli("pheno")
     assert caught.value.plain_output == "Invalid input"
 
 

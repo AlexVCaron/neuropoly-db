@@ -1,7 +1,7 @@
 import pytest
 
 from npdb.annotation import AnnotationConfig
-from npdb.managers.annotation import NeurobagelAnnotator
+from npdb.providers.annotation import NeurobagelAnnotator
 
 
 class TestAnnotationConfig:

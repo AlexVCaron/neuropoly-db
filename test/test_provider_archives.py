@@ -8,20 +8,20 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from npdb.managers.model import ProviderManager
-from npdb.managers.preparation import unpack_provider_archives
+from npdb.providers.model import Provider
+from npdb.providers.preparation import unpack_provider_archives
 
 
 def test_provider_preparation_hooks_are_ordered(tmp_path):
-    manager = ProviderManager()
+    provider = Provider()
     extracted = tmp_path / "extracted"
     prepared = tmp_path / "bids"
 
     with (
-        patch.object(manager, "unpack", return_value=extracted) as unpack,
-        patch.object(manager, "prepare", return_value=prepared) as prepare,
+        patch.object(provider, "unpack", return_value=extracted) as unpack,
+        patch.object(provider, "prepare", return_value=prepared) as prepare,
     ):
-        assert manager.prepare_fetched(tmp_path) == prepared
+        assert provider.prepare_fetched(tmp_path) == prepared
 
     unpack.assert_called_once_with(tmp_path)
     prepare.assert_called_once_with(extracted)
@@ -31,7 +31,7 @@ def test_provider_default_hooks_prepare_an_archive(tmp_path):
     with zipfile.ZipFile(tmp_path / "rawdata.zip", "w") as archive:
         archive.writestr("rawdata/sub-01/anat/sub-01_T1w.nii.gz", b"image")
 
-    assert ProviderManager().prepare_fetched(tmp_path) == tmp_path
+    assert Provider().prepare_fetched(tmp_path) == tmp_path
     assert (tmp_path / "sub-01/anat/sub-01_T1w.nii.gz").read_bytes() == b"image"
     assert (tmp_path / "participants.tsv").exists()
 
@@ -223,10 +223,10 @@ def test_provider_unpacks_before_conversion(tmp_path, corrupt):
     else:
         with zipfile.ZipFile(archive_path, "w") as archive:
             archive.writestr("participants.tsv", b"data")
-    manager = Mock()
-    manager.provider_name = "figshare"
-    manager.fetch.side_effect = (
-        lambda *args, **kwargs: ProviderManager().prepare_fetched(tmp_path)
+    provider = Mock()
+    provider.provider_name = "figshare"
+    provider.fetch.side_effect = (
+        lambda *args, **kwargs: Provider().prepare_fetched(tmp_path)
     )
 
     def convert(**kwargs):
@@ -235,7 +235,7 @@ def test_provider_unpacks_before_conversion(tmp_path, corrupt):
         assert not archive_path.exists()
 
     with (
-        patch.object(module.ProviderManagerFactory, "create", return_value=manager),
+        patch.object(module.ProviderFactory, "create", return_value=provider),
         patch("npdb.cli.cli.local2bagel", side_effect=convert) as conversion,
     ):
         kwargs = dict(

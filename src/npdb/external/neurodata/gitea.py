@@ -3,7 +3,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from npdb.extras import MissingExtraError
-from npdb.managers.model import GitManager
+from npdb.providers.model import GitProviderBase
 
 try:
     import gitea as gt_client
@@ -11,7 +11,7 @@ except ImportError:  # 'gitea' extra not installed; raised on use
     gt_client = None
 
 
-class GiteaManager(GitManager):
+class GiteaProvider(GitProviderBase):
     def __init__(self, url: str, user: str, token: str, ssl_verify: bool = True):
         if gt_client is None:
             raise MissingExtraError("NeuroData access", "gitea")

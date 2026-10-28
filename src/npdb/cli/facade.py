@@ -3,7 +3,7 @@ Facade Pattern — high-level entry points for dataset conversion and BIDS
 standardization pipelines.
 
 Clients (e.g. the CLI) interact with these two facades rather than with the
-managers, annotators, and converters directly.
+providers, annotators, and converters directly.
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ from bids_repair.validation import BidsSeverity, validate_and_repair_bids_datase
 from npdb.annotation import AnnotationConfig
 from npdb.cli.helpers import extend_bids_description
 from npdb.errors import NpdbError
-from npdb.managers.annotation import BIDSStandardizer, NeurobagelAnnotator
-from npdb.managers.neuropoly import BagelNeuroPolyMTL
+from npdb.providers.annotation import BIDSStandardizer, NeurobagelAnnotator
+from npdb.providers.neuropoly import BagelNeuroPolyMTL
 from npdb.report import LedgerObserver, RunLedger
 
 
@@ -122,10 +122,10 @@ class DatasetConversionFacade:
             )
 
         # Convert BIDS
-        bagel_manager = BagelNeuroPolyMTL(str(output))
+        bagel_provider = BagelNeuroPolyMTL(str(output))
         phenotypes_tsv = str(output / "phenotypes.tsv")
         phenotypes_annotations = str(output / "phenotypes_annotations.json")
-        result = bagel_manager.convert_bids(
+        result = bagel_provider.convert_bids(
             dataset=dataset_dir.name,
             bids_dir=str(dataset_dir),
             phenotypes_tsv=phenotypes_tsv,

@@ -14,7 +14,7 @@ from npdb.annotation.standardize import (
     normalize_participants_tsv,
 )
 from npdb.automation.mappings.resolvers import MappingResolver
-from npdb.managers.preparation import extract_archive
+from npdb.providers.preparation import extract_archive
 
 
 def write_json(path: Path, payload: Any) -> None:
