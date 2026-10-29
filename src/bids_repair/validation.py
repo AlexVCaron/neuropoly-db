@@ -29,14 +29,71 @@ class BidsValidationError(RuntimeError):
         self.report = report
 
 
+def _is_derivative_finding(
+    finding: dict[str, Any], *, dataset_root: Path | None
+) -> bool:
+    if dataset_root is None:
+        return False
+
+    derivatives_root = dataset_root / "derivatives"
+    raw_dataset = finding.get("dataset")
+    if raw_dataset:
+        owner = Path(str(raw_dataset))
+        if not owner.is_absolute():
+            owner = dataset_root / owner
+        if owner.is_relative_to(derivatives_root):
+            return True
+        if owner == dataset_root and dataset_root.parent.name == "derivatives":
+            return True
+
+    raw_path = finding.get("path")
+    if raw_path in (None, ""):
+        return False
+
+    path = Path(str(raw_path))
+    if not path.is_absolute():
+        path = dataset_root / path
+    return path.is_relative_to(derivatives_root)
+
+
+def _effective_severity(
+    finding: dict[str, Any], *, dataset_root: Path | None
+) -> BidsSeverity:
+    try:
+        severity = BidsSeverity(str(finding.get("severity", "")).lower())
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Unknown BIDS finding severity: {finding.get('severity')!r}"
+        ) from exc
+
+    if severity == BidsSeverity.ERROR and _is_derivative_finding(
+        finding, dataset_root=dataset_root
+    ):
+        return BidsSeverity.WARNING
+    return severity
+
+
+def _effective_finding(
+    finding: dict[str, Any], *, dataset_root: Path | None
+) -> dict[str, Any]:
+    adjusted = dict(finding)
+    severity = _effective_severity(finding, dataset_root=dataset_root)
+    if severity.value != str(finding.get("severity", "")).lower():
+        adjusted["severity"] = severity.value
+        adjusted["original_severity"] = finding["severity"]
+    return adjusted
+
+
 def findings_above_threshold(
     report: dict[str, Any],
     severity_threshold: BidsSeverity | str = BidsSeverity.WARNING,
+    *,
+    dataset_root: Path | None = None,
 ) -> list[dict[str, Any]]:
     """Return final findings strictly more severe than the allowed threshold."""
     threshold = BidsSeverity(severity_threshold)
     ranks = {severity: rank for rank, severity in enumerate(BidsSeverity)}
-    findings = _normalised_report_issues(report)
+    findings = _normalised_report_issues(report, dataset_root=dataset_root)
     for dataset_report in report["datasets"]:
         issues = dataset_report.get("issues", [])
         for severity, count_key in (
@@ -58,20 +115,20 @@ def findings_above_threshold(
                     {
                         "code": "UNLISTED_VALIDATOR_FINDINGS",
                         "severity": severity.value,
+                        "dataset": str(dataset_report.get("dataset", "")),
                         "path": str(dataset_report.get("dataset", "")),
                         "message": f"Validator reported {count - listed} additional {severity.value} finding(s).",
                     }
                 )
 
-    findings.extend(report.get("repair", {}).get("unresolved", []))
+    findings.extend(
+        _effective_finding(item, dataset_root=dataset_root)
+        for item in report.get("repair", {}).get("unresolved", [])
+    )
     exceeding = {}
     for finding in findings:
-        try:
-            severity = BidsSeverity(str(finding.get("severity", "")).lower())
-        except ValueError as exc:
-            raise RuntimeError(
-                f"Unknown BIDS finding severity: {finding.get('severity')!r}"
-            ) from exc
+        finding = _effective_finding(finding, dataset_root=dataset_root)
+        severity = BidsSeverity(finding["severity"])
         if ranks[severity] > ranks[threshold]:
             exceeding[_issue_key(finding)] = finding
 
@@ -283,7 +340,7 @@ def validate_bids_dataset(
         if target_version is not None
         else get_bids_validation_report(dataset)
     )
-    if any(item.get("errors") != 0 for item in report["datasets"]):
+    if findings_above_threshold(report, dataset_root=Path(dataset).resolve()):
         raise RuntimeError(f"Rust BIDS validation failed: {json.dumps(report)}")
     return report
 
@@ -364,8 +421,8 @@ def validate_and_repair_bids_dataset(
                 f"is available at {journals[-1] if journals else 'the repair journal'}: {exc}"
             ) from exc
 
-    original_keys = _report_issue_keys(original_report)
-    final_keys = _report_issue_keys(current_report)
+    original_keys = _report_issue_keys(original_report, dataset_root=root)
+    final_keys = _report_issue_keys(current_report, dataset_root=root)
     final_plan = _plan_from_report(
         root,
         current_report,
@@ -376,11 +433,11 @@ def validate_and_repair_bids_dataset(
         item for item in final_plan["findings"] if item.get("resolution") != "planned"
     ]
     unresolved = _remaining_findings(
-        current_report, unresolved_candidates, original_keys
+        current_report, unresolved_candidates, original_keys, dataset_root=root
     )
     resolved = [
         finding
-        for finding in _normalised_report_issues(original_report)
+        for finding in _normalised_report_issues(original_report, dataset_root=root)
         if _issue_key(finding) not in final_keys
     ]
     newly_introduced = [
@@ -403,14 +460,14 @@ def validate_and_repair_bids_dataset(
     }
     final_report = dict(current_report)
     final_report["repair"] = repair_summary
-    exceeding = findings_above_threshold(final_report, threshold)
+    exceeding = findings_above_threshold(final_report, threshold, dataset_root=root)
     repair_summary["severity_gate"] = {
         "threshold": threshold.value,
         "passed": not exceeding,
         "exceeding": exceeding,
     }
 
-    counts = _final_finding_counts(final_report)
+    counts = _final_finding_counts(final_report, dataset_root=root)
     repair_summary["counts"] = counts
     manifest = save_bids_repair_manifest(root, final_report)
     print(
@@ -429,13 +486,18 @@ def validate_and_repair_bids_dataset(
     return final_report
 
 
-def _final_finding_counts(report: dict[str, Any]) -> dict[str, int]:
+def _final_finding_counts(
+    report: dict[str, Any], *, dataset_root: Path | None = None
+) -> dict[str, int]:
     counts = {severity.value: 0 for severity in BidsSeverity}
     findings = {
         _issue_key(finding): finding
         for finding in [
-            *_normalised_report_issues(report),
-            *report["repair"]["unresolved"],
+            *_normalised_report_issues(report, dataset_root=dataset_root),
+            *(
+                _effective_finding(item, dataset_root=dataset_root)
+                for item in report["repair"]["unresolved"]
+            ),
         ]
     }
     for finding in findings.values():
@@ -449,7 +511,16 @@ def _final_finding_counts(report: dict[str, Any]) -> dict[str, int]:
                 for issue in dataset_report.get("issues", [])
                 if isinstance(issue, dict)
             )
-            counts[severity] += max(0, dataset_report.get(field, 0) - listed)
+            remaining = max(0, dataset_report.get(field, 0) - listed)
+            if remaining:
+                effective = _effective_severity(
+                    {
+                        "severity": severity,
+                        "dataset": str(dataset_report.get("dataset", "")),
+                    },
+                    dataset_root=dataset_root,
+                )
+                counts[effective.value] += remaining
 
     return counts
 
@@ -457,39 +528,38 @@ def _final_finding_counts(report: dict[str, Any]) -> dict[str, int]:
 def _remaining_findings(
     report: dict[str, Any],
     candidates: list[dict[str, Any]],
-    original_keys: set[tuple[str, str, str]],
+    original_keys: set[tuple[str, str, str, str]],
+    *,
+    dataset_root: Path | None = None,
 ) -> list[dict[str, Any]]:
-    candidate_index: dict[tuple[str, str, str], dict[str, Any]] = {}
-    candidate_by_location: dict[tuple[str, str], dict[str, Any]] = {}
+    candidate_index: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    candidate_by_location: dict[tuple[str, str, str], dict[str, Any]] = {}
     for finding in candidates:
-        key = (
-            str(finding.get("code", "")),
-            str(finding.get("path", "")),
-            str(finding.get("message", "")),
-        )
+        key = _issue_key(finding)
         candidate_index[key] = finding
-        candidate_by_location[(key[0], key[1])] = finding
+        candidate_by_location[key[:3]] = finding
 
     remaining: list[dict[str, Any]] = []
     for dataset_report in report.get("datasets", []):
+        dataset = str(dataset_report.get("dataset", ""))
         for issue in dataset_report.get("issues", []):
             if not isinstance(issue, dict):
                 continue
             key = (
+                dataset,
                 str(issue.get("code", "")),
-                str(issue.get("path", "")),
+                str(issue.get("path") or ""),
                 str(issue.get("message", "")),
             )
-            previous = candidate_index.get(key) or candidate_by_location.get(
-                (key[0], key[1])
-            )
+            previous = candidate_index.get(key) or candidate_by_location.get(key[:3])
             finding = {
-                "code": key[0] or "UNKNOWN_VALIDATOR_ISSUE",
+                "dataset": dataset,
+                "code": key[1] or "UNKNOWN_VALIDATOR_ISSUE",
                 "severity": str(issue.get("severity", "info")).lower(),
-                "message": key[2] or "Validator reported an issue.",
+                "message": key[3] or "Validator reported an issue.",
             }
-            if key[1]:
-                finding["path"] = key[1]
+            if key[2]:
+                finding["path"] = key[2]
             if issue.get("diagnostics"):
                 finding["diagnostics"] = issue["diagnostics"]
             elif previous and previous.get("diagnostics"):
@@ -504,22 +574,15 @@ def _remaining_findings(
                 finding["resolution"] = (
                     "The finding remains after the bounded automatic repair pass."
                 )
-            remaining.append(finding)
+            remaining.append(_effective_finding(finding, dataset_root=dataset_root))
 
     from bids_repair.repair import issue_repair_kind
 
     for finding in candidates:
         if issue_repair_kind(finding) is None:
-            remaining.append(finding)
+            remaining.append(_effective_finding(finding, dataset_root=dataset_root))
 
-    deduplicated = {
-        (
-            str(item.get("code", "")),
-            str(item.get("path", "")),
-            str(item.get("message", "")),
-        ): item
-        for item in remaining
-    }
+    deduplicated = {_issue_key(item): item for item in remaining}
     return sorted(
         deduplicated.values(),
         key=lambda item: (
@@ -530,31 +593,40 @@ def _remaining_findings(
     )
 
 
-def _normalised_report_issues(report: dict[str, Any]) -> list[dict[str, Any]]:
+def _normalised_report_issues(
+    report: dict[str, Any], *, dataset_root: Path | None = None
+) -> list[dict[str, Any]]:
     findings = []
     for dataset_report in report.get("datasets", []):
         for issue in dataset_report.get("issues", []):
             if not isinstance(issue, dict):
                 continue
             finding = {
+                "dataset": str(dataset_report.get("dataset", "")),
                 "code": str(issue.get("code", "UNKNOWN_VALIDATOR_ISSUE")),
                 "severity": str(issue.get("severity", "info")).lower(),
                 "message": str(issue.get("message", "Validator reported an issue.")),
             }
             if issue.get("path") is not None:
                 finding["path"] = str(issue["path"])
-            findings.append(finding)
+            findings.append(_effective_finding(finding, dataset_root=dataset_root))
     return findings
 
 
-def _report_issue_keys(report: dict[str, Any]) -> set[tuple[str, str, str]]:
-    return {_issue_key(item) for item in _normalised_report_issues(report)}
+def _report_issue_keys(
+    report: dict[str, Any], *, dataset_root: Path | None = None
+) -> set[tuple[str, str, str, str]]:
+    return {
+        _issue_key(item)
+        for item in _normalised_report_issues(report, dataset_root=dataset_root)
+    }
 
 
-def _issue_key(finding: dict[str, Any]) -> tuple[str, str, str]:
+def _issue_key(finding: dict[str, Any]) -> tuple[str, str, str, str]:
     return (
+        str(finding.get("dataset", "")),
         str(finding.get("code", "")),
-        str(finding.get("path", "")),
+        str(finding.get("path") or ""),
         str(finding.get("message", "")),
     )
 

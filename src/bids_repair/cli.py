@@ -8,11 +8,17 @@ from enum import Enum
 from pathlib import Path
 from typing import Annotated, Any
 
-import click
 import typer
 from rich.console import Console
 from rich.text import Text
 from typer.core import TyperCommand, TyperGroup
+
+# Use the exception types understood by the installed Typer command runner.
+try:
+    from typer._click.core import Context
+    from typer._click.exceptions import UsageError
+except ImportError:
+    from click import Context, UsageError
 
 from bids_repair import (
     BidsRepairError,
@@ -35,6 +41,7 @@ from bids_repair.validation import findings_above_threshold
 Dataset = Annotated[
     Path,
     typer.Argument(
+        metavar="DATASET",
         exists=True,
         file_okay=False,
         resolve_path=True,
@@ -73,10 +80,10 @@ error_console = Console(stderr=True, highlight=False)
 
 
 class RepairCommand(TyperCommand):
-    def invoke(self, ctx: click.Context) -> Any:
+    def invoke(self, ctx: Context) -> Any:
         try:
             return super().invoke(ctx)
-        except click.exceptions.Exit:
+        except (typer.Exit, typer.Abort):
             raise
         except (BidsRepairError, ValueError, OSError, RuntimeError) as exc:
             if ctx.params.get("output_format") == "json":
@@ -101,7 +108,7 @@ class RepairCommand(TyperCommand):
 
 
 class RepairGroup(TyperGroup):
-    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+    def parse_args(self, ctx: Context, args: list[str]) -> list[str]:
         if args and args[0] == "--":
             args = ["plan", *args[1:]]
         elif args and args[0] not in self.commands and not args[0].startswith("-"):
@@ -170,13 +177,13 @@ def _target_version(
         value = declared
     if value is None:
         if not _interactive():
-            raise click.UsageError("Supply --bids-version VERSION for unattended use.")
+            raise UsageError("Supply --bids-version VERSION for unattended use.")
         with redirect_stdout(sys.stderr):
             value = typer.prompt("Target BIDS standard version", type=str, err=True)
 
     version = resolve_bids_version(value)
     if version is None:
-        raise click.UsageError("A target BIDS version is required.")
+        raise UsageError("A target BIDS version is required.")
     if explicit and declared is not None and version != declared:
         error_console.print(
             Text(
@@ -194,7 +201,7 @@ def _aliases(values: list[str] | None) -> dict[str, str]:
     try:
         return parse_suffix_aliases(values)
     except ValueError as exc:
-        raise click.UsageError(str(exc)) from exc
+        raise UsageError(str(exc)) from exc
 
 
 def _emit(result: dict[str, Any], output_format: str) -> None:
@@ -289,7 +296,7 @@ def plan(
     output_format: FormatOption = OutputFormat.human,
 ) -> None:
     if apply_changes and dry_run:
-        raise click.UsageError("--apply and --dry-run cannot be used together.")
+        raise UsageError("--apply and --dry-run cannot be used together.")
 
     aliases = _aliases(suffix_alias)
     version, schema_path = _target_version(bids_version, schema_path, dataset)
@@ -358,7 +365,7 @@ def validate(
     findings = [
         issue for item in report["datasets"] for issue in item.get("issues", [])
     ]
-    failed = bool(findings_above_threshold(report))
+    failed = bool(findings_above_threshold(report, dataset_root=dataset))
 
     _emit(
         {

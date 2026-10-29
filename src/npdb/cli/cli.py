@@ -5,11 +5,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Annotated, Callable, Optional
 
-import click
 import typer
 from dotenv import find_dotenv, load_dotenv
 from rich.live import Live
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+
+try:
+    from typer._click.exceptions import ClickException
+except ImportError:
+    from click import ClickException
 
 from bids_repair.validation import BidsSeverity
 from npdb.annotation.modes import AnnotationMode
@@ -64,9 +68,9 @@ def handle_errors(func: Callable) -> Callable:
         try:
             return func(*args, **kwargs)
         except (
-            click.exceptions.Exit,
-            click.exceptions.ClickException,
-            click.exceptions.Abort,
+            typer.Exit,
+            typer.Abort,
+            ClickException,
             SystemExit,
         ):
             raise
@@ -152,6 +156,7 @@ def _parse_suffix_aliases(values: list[str] | None) -> dict[str, str]:
 def local2bagel(
     input_dir: Path = typer.Argument(
         ...,
+        metavar="INPUT_DIR",
         help="Local BIDS dataset root directory to convert.",
         file_okay=False,
         dir_okay=True,
@@ -160,10 +165,12 @@ def local2bagel(
     ),
     online_url: str = typer.Argument(
         ...,
+        metavar="ONLINE_URL",
         help="Repository URL recorded in output metadata (RepositoryURL/AccessLink).",
     ),
     output: Path = typer.Argument(
         ...,
+        metavar="OUTPUT",
         help="Output directory for generated Neurobagel files.",
         file_okay=False,
         dir_okay=True,
@@ -355,7 +362,7 @@ def _provider_call(
     cache_dir: Optional[Path] = None,
     **kwargs,
 ) -> None:
-    provider_name = ProviderFactory.create(
+    provider = ProviderFactory.create(
         provider_name,
         cache_dir=str(cache_dir) if cache_dir else None,
         credentials_path=kwargs.get("credentials_path"),
@@ -363,9 +370,9 @@ def _provider_call(
         endpoint=kwargs.get("endpoint"),
     )
     provider_id = (
-        provider_name.provider_name.value
-        if isinstance(provider_name.provider_name, ProviderName)
-        else str(provider_name.provider_name)
+        provider.provider_name.value
+        if isinstance(provider.provider_name, ProviderName)
+        else str(provider.provider_name)
     )
 
     dataset_id = (
@@ -374,22 +381,22 @@ def _provider_call(
         else identifier.replace("/", "_")
     )
     dataset_id = dataset_id.replace(".", "_")
-    if isinstance(provider_name, GitProvider):
-        dataset_id = provider_name.dataset_id(identifier).replace("/", "_")
-    if isinstance(provider_name, MIDRCProvider):
-        dataset_id = provider_name.discovery_id(identifier) or dataset_id
-        online_url, access_type = provider_name.describe(identifier)
+    if isinstance(provider, GitProvider):
+        dataset_id = provider.dataset_id(identifier).replace("/", "_")
+    if isinstance(provider, MIDRCProvider):
+        dataset_id = provider.discovery_id(identifier) or dataset_id
+        online_url, access_type = provider.describe(identifier)
     local_fetch = Path(output) / f"{provider_id}_{dataset_id}"
 
-    if isinstance(provider_name, (MIDRCProvider, MendeleyProvider)):
+    if isinstance(provider, (MIDRCProvider, MendeleyProvider)):
         display = RepoDownloadDisplay()
-        provider_name.add_download_observer(display)
+        provider.add_download_observer(display)
         with Live(display, refresh_per_second=4, transient=False):
-            fetched = provider_name.fetch(identifier, local_fetch, **kwargs)
+            fetched = provider.fetch(identifier, local_fetch, **kwargs)
     else:
-        fetched = provider_name.fetch(identifier, local_fetch, **kwargs)
+        fetched = provider.fetch(identifier, local_fetch, **kwargs)
     if provider_id == ProviderName.MENDELEY.value:
-        access_type = provider_name.access_type
+        access_type = provider.access_type
 
     local2bagel(
         input_dir=fetched,
@@ -415,10 +422,12 @@ def _provider_call(
 def gitea2bagel(
     dataset: str = typer.Argument(
         ...,
+        metavar="DATASET",
         help="Dataset name on NeuroData (under the datasets organization).",
     ),
     output: Path = typer.Argument(
         ...,
+        metavar="OUTPUT",
         help="Output directory for generated Neurobagel files.",
         file_okay=False,
         dir_okay=True,

@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
+import typer
 from bidsschematools.schema import load_schema
 from typer.testing import CliRunner
 from typer.testing import CliRunner as RepairRunner
@@ -18,13 +19,27 @@ from typer.testing import CliRunner as RepairRunner
 from bids_repair import BidsRepairError, BidsValidationError
 from bids_repair.cli import app as repair_app
 from npdb.annotation.preflight import PreflightError
-from npdb.cli.cli import npdb
+from npdb.cli.cli import handle_errors, npdb
 from npdb.cli.errors import ISSUE_URL_LIMIT, diagnose, issue_url
 from npdb.errors import ConfigurationError, GitCommandError, UsageError, redact
 from npdb.external.neurobagel.errors import BagelCLIError
 from npdb.extras import MissingExecutableError, MissingExtraError
 
 runner = CliRunner()
+
+
+@pytest.mark.parametrize("exception", [typer.Exit(7), typer.Abort()])
+def test_typer_control_flow_is_not_reported_as_an_error(exception):
+    @handle_errors
+    def callback():
+        raise exception
+
+    with patch("npdb.cli.cli.report_exception") as report:
+        with pytest.raises(type(exception)) as failure:
+            callback()
+
+    assert failure.value is exception
+    report.assert_not_called()
 
 
 def http_error(status):
@@ -600,7 +615,9 @@ def test_gitea_clone_failure_is_explained(tmp_path):
     )
     with (
         patch("npdb.cli.cli._load_env"),
-        patch("npdb.cli.cli.GiteaProviderFactory.create_from_env", return_value=provider),
+        patch(
+            "npdb.cli.cli.GiteaProviderFactory.create_from_env", return_value=provider
+        ),
     ):
         result = runner.invoke(
             npdb, ["convert", "bagel", "gitea", "ds", str(tmp_path / "out")]
@@ -616,7 +633,9 @@ def test_download_interrupt(tmp_path):
     )()
     with (
         patch("npdb.cli.cli._load_env"),
-        patch("npdb.cli.cli.GiteaProviderFactory.create_from_env", return_value=provider),
+        patch(
+            "npdb.cli.cli.GiteaProviderFactory.create_from_env", return_value=provider
+        ),
         patch("npdb.cli.cli.repo_has_git_annex", side_effect=KeyboardInterrupt),
     ):
         result = runner.invoke(

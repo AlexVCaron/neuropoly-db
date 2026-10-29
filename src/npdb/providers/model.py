@@ -55,11 +55,6 @@ class ProviderContract(ABC):
     def __init__(self):
         self._download_observers: list[DownloadObserver] = []
 
-    @property
-    @abstractmethod
-    def datasets(self) -> Sequence[Any]:
-        pass
-
     def fetch(self, identifier: str, output_dir: str | Path, **kwargs: Any) -> Path:
         raise NotImplementedError
 
@@ -150,10 +145,6 @@ class GitProviderBase(ProviderContract):
         self._user = user
         self._token = token
         self._ssl_verify = ssl_verify
-
-    @property
-    def datasets(self) -> Sequence[Any]:
-        return []
 
     def git_http_config(self) -> list[str]:
         git_auth = b64encode(f"{self._user}:{self._token}".encode("utf-8")).decode(

@@ -518,7 +518,9 @@ def test_derivative_errors_are_downgraded_to_warnings_by_default(tmp_path):
             ],
         },
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         result = validate_and_repair_bids_dataset(root)
     assert result["repair"]["counts"]["error"] == 0
     assert result["repair"]["counts"]["warning"] == 1
@@ -545,10 +547,78 @@ def test_derivative_warnings_still_fail_at_info_threshold(tmp_path):
         },
     )
     with (
-        patch("npdb.external.bids.get_bids_validation_report", return_value=report),
+        patch("bids_repair.validation.get_bids_validation_report", return_value=report),
         pytest.raises(BidsValidationError, match="above 'info'"),
     ):
         validate_and_repair_bids_dataset(root, severity_threshold="info")
+
+
+def test_identical_findings_keep_their_owning_dataset(tmp_path):
+    root = _make_dataset(tmp_path)
+    owners = [root, root / "derivatives" / "first", root / "derivatives" / "second"]
+    issue = {
+        "code": "UNSUPPORTED",
+        "severity": "error",
+        "path": "sub-01/anat/sub-01_T1w.nii.gz",
+        "message": "Cannot repair",
+    }
+    report = _multi_dataset_report(
+        *(
+            {"dataset": str(owner), "errors": 1, "warnings": 0, "issues": [issue]}
+            for owner in owners
+        )
+    )
+
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
+        result = validate_and_repair_bids_dataset(root, severity_threshold="error")
+
+    summary = result["repair"]
+    assert summary["counts"] == {"info": 0, "warning": 2, "error": 1}
+    assert {finding["dataset"] for finding in summary["unresolved"]} == {
+        str(owner) for owner in owners
+    }
+    assert summary["resolved"] == summary["newly_introduced"] == []
+    assert result["datasets"] == report["datasets"]
+    assert all(item["issues"][0]["severity"] == "error" for item in report["datasets"])
+    exceeding = findings_above_threshold(result, dataset_root=root)
+    assert len(exceeding) == 1
+    assert exceeding[0]["dataset"] == str(root)
+
+
+@pytest.mark.parametrize("threshold,passes", [("warning", True), ("info", False)])
+def test_unlisted_derivative_findings_use_effective_severity(
+    tmp_path, threshold, passes
+):
+    root = _make_dataset(tmp_path)
+    report = _multi_dataset_report(
+        {"dataset": str(root), "errors": 0, "warnings": 0, "issues": []},
+        {
+            "dataset": str(root / "derivatives" / "labels"),
+            "errors": 3,
+            "warnings": 2,
+            "issues": [],
+        },
+    )
+
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
+        if passes:
+            result = validate_and_repair_bids_dataset(
+                root, severity_threshold=threshold
+            )
+        else:
+            with pytest.raises(BidsValidationError) as failure:
+                validate_and_repair_bids_dataset(root, severity_threshold=threshold)
+            result = failure.value.report
+
+    assert result["repair"]["counts"] == {"info": 0, "warning": 5, "error": 0}
+    gate = result["repair"]["severity_gate"]
+    assert gate["passed"] is passes
+    assert all(finding["severity"] == "warning" for finding in gate["exceeding"])
+    assert result["datasets"] == report["datasets"]
 
 
 def test_standalone_validation_ignores_derivative_only_errors(tmp_path):
@@ -568,7 +638,9 @@ def test_standalone_validation_ignores_derivative_only_errors(tmp_path):
             ],
         },
     )
-    with patch("npdb.external.bids.get_bids_validation_report", return_value=report):
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
         assert validate_bids_dataset(root) == report
 
 
@@ -589,7 +661,11 @@ def test_revalidation_does_not_mark_same_pathless_derivative_issue_as_new(tmp_pa
             "dataset": str(root),
             "errors": 1,
             "warnings": 0,
-            "issues": [_filename_issue("sub-01/func/sub-01_task-rest_run2_bold.nii.gz", "error")],
+            "issues": [
+                _filename_issue(
+                    "sub-01/func/sub-01_task-rest_run2_bold.nii.gz", "error"
+                )
+            ],
         },
         {
             "dataset": str(deriv_root),
@@ -608,7 +684,7 @@ def test_revalidation_does_not_mark_same_pathless_derivative_issue_as_new(tmp_pa
         },
     )
     with patch(
-        "npdb.external.bids.get_bids_validation_report",
+        "bids_repair.validation.get_bids_validation_report",
         side_effect=[initial, final],
     ):
         result = validate_and_repair_bids_dataset(root)

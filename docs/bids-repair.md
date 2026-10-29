@@ -54,6 +54,12 @@ and fails if the resulting version is unsupported.
 | `--apply`                                      | planning is read-only; use to apply the changes to the actual dataset                                                                                                                                    |
 | `--dry-run`                                    | runs through the application code without calling the commands                                                                                                                                           |
 
+Errors belonging to derivative datasets are treated as warnings for the final
+gate and summary counts. The original validator report is retained unchanged;
+adjusted findings record `original_severity`. Use a threshold of `info` to fail
+on derivative warnings as well. Findings retain their owning dataset so identical
+issues in different derivative datasets remain distinct across revalidation.
+
 ## Explicit participant standardization
 
 ```bash

@@ -651,6 +651,8 @@ def _normalise_finding(
         "severity": severity,
         "message": str(issue.get("message", "Validator reported an issue.")),
     }
+    if owner is not None:
+        finding["dataset"] = str(owner)
     if issue.get("path") is not None:
         finding["path"] = str(issue["path"])
     if issue_repair_kind(finding, owner) is None:

@@ -26,9 +26,15 @@ from pathlib import Path
 from typing import Callable, Iterator
 from urllib.parse import urlencode
 
-import click
 import httpx
 import typer
+
+# Newer Typer releases have an independent Click context stack.
+try:
+    from typer._click.core import Context
+    from typer._click.globals import get_current_context
+except ImportError:
+    from click import Context, get_current_context
 
 from npdb.errors import ISSUES_URL, WIKI_URL, GitCommandError, NpdbError, redact
 
@@ -298,7 +304,7 @@ def _docs_url(docs: str | None) -> str | None:
     return docs if docs.startswith("http") else f"{WIKI_URL}/{docs}"
 
 
-def _command_line(ctx: click.Context | None) -> str:
+def _command_line(ctx: Context | None) -> str:
     if Path(sys.argv[0]).name.startswith("npdb"):
         return redact("npdb " + shlex.join(sys.argv[1:]))
     if ctx is None:
@@ -404,13 +410,13 @@ def write_report(text: str) -> Path:
     raise OSError("Could not write the error report.")
 
 
-def _json_mode(ctx: click.Context | None) -> bool:
+def _json_mode(ctx: Context | None) -> bool:
     return bool(ctx and str(ctx.params.get("output_format", "")).lower() == "json")
 
 
 def report_exception(exc: BaseException) -> int:
     """Render *exc* for the user; return the process exit code."""
-    ctx = click.get_current_context(silent=True)
+    ctx = get_current_context(silent=True)
     command_name = ctx.info_name if ctx else None
     diagnosis = diagnose(exc, command_name)
     debug = os.environ.get(DEBUG_ENV, "").lower() in {"1", "true", "yes"}
