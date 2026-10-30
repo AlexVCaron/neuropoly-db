@@ -83,6 +83,9 @@ path = "hatch_build.py"
 asyncio_mode = "strict"
 pythonpath = ["src"]
 testpaths = ["test"]
+markers = [
+  "integration: live provider conversions compared to snapshots (opt-in: NPDB_RUN_INTEGRATION=1)",
+]
 
 [dependency-groups]
 dev = [

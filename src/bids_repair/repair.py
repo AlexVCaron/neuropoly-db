@@ -215,6 +215,25 @@ def _plan_from_report(
                         resolution="The invalid field requires user correction.",
                     )
                 )
+        elif issue_repair_kind(finding) == "missing_value":
+            table = _issue_file_path(owner, finding.get("path"))
+            operation, explanation = (
+                _missing_value_repair(table)
+                if table is not None
+                else (None, "The validator finding has no safe dataset-relative path.")
+            )
+            if operation:
+                if operation["id"] not in description_operations:
+                    operation["original_findings"] = []
+                    operations.append(operation)
+                    description_operations.add(operation["id"])
+                planned = next(
+                    item for item in operations if item["id"] == operation["id"]
+                )
+                planned["original_findings"].append(dict(issue))
+                finding.update(action="normalize_missing_values", resolution="planned")
+            else:
+                finding["resolution"] = explanation
         elif issue_repair_kind(finding) == "filename":
             source = _issue_file_path(owner, finding.get("path"))
             target, reason = (
@@ -635,7 +654,59 @@ def issue_repair_kind(issue: dict[str, Any], owner: Path | None = None) -> str |
         "ALL_FILENAME_RULES_HAVE_ISSUES",
     }:
         return "filename"
+    if code == "TSV_VALUE_INCORRECT_TYPE" and str(issue.get("path", "")).endswith(
+        ".tsv"
+    ):
+        return "missing_value"
     return None
+
+
+def _missing_value_repair(path: Path) -> tuple[dict[str, Any] | None, str]:
+    if path.is_symlink() or not path.is_file():
+        return None, "The reported table is missing or unsafe; no repair was proposed."
+    try:
+        original = path.read_bytes()
+        text = original.decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"The reported table cannot be read as UTF-8: {exc}."
+
+    lines = text.splitlines(keepends=True)
+    changed = 0
+    for index, line in enumerate(lines[1:], 1):
+        body = line.rstrip("\r\n")
+        cells = body.split("\t")
+        # Only case variants of the BIDS marker are rewritten; NA, N.A. or
+        # empty cells are ambiguous and stay for the user to correct.
+        fixed = [
+            "n/a" if cell.lower() == "n/a" and cell != "n/a" else cell for cell in cells
+        ]
+        if fixed != cells:
+            changed += sum(a != b for a, b in zip(cells, fixed))
+            lines[index] = "\t".join(fixed) + line[len(body) :]
+    if not changed:
+        return None, (
+            "The value has the wrong type and is not a case variant of 'n/a'; "
+            "it requires user correction."
+        )
+
+    message = f"Normalized {changed} missing-value marker(s) to 'n/a' in {path.name}."
+    operation = _operation(
+        "write",
+        path,
+        None,
+        content="".join(lines),
+        expected_sha256=hashlib.sha256(original).hexdigest(),
+        affected_paths=[str(path)],
+        evidence="Validator reported a TSV value type error; only cells equal to 'n/a' ignoring case were rewritten to the BIDS missing-value marker.",
+        diagnostic={
+            "code": "REPAIRED_MISSING_VALUES",
+            "severity": "info",
+            "message": message,
+            "path": str(path),
+            "affected_paths": [str(path)],
+        },
+    )
+    return operation, message
 
 
 def _normalise_finding(

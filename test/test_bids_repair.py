@@ -1004,3 +1004,84 @@ def test_real_validator_confirms_description_and_filename_repairs(
     )
     if invalid_path is not None:
         assert invalid_path.with_name("sub-01_task-rest_run-2_bold.nii.gz").is_file()
+
+
+def _type_issue(path: str) -> dict:
+    return {
+        "code": "TSV_VALUE_INCORRECT_TYPE",
+        "severity": "error",
+        "message": "A value in a column did not match the acceptable type: 'N/A'",
+        "path": path,
+    }
+
+
+def test_missing_value_case_variants_are_normalized_once_per_table(tmp_path):
+    root = _make_dataset(tmp_path)
+    participants = root / "participants.tsv"
+    participants.write_bytes(
+        b"participant_id\tage\tsex\tnote\r\n"
+        b"sub-01\tN/A\tN/a\tN/A text\r\n"
+        b"sub-02\t30\tF\tNA\r\n"
+    )
+    report = _report(
+        root, _type_issue(str(participants)), _type_issue(str(participants))
+    )
+
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
+        plan = plan_bids_repair(root)
+
+    assert plan["blocking"] is False
+    assert len(plan["operations"]) == 1
+    operation = plan["operations"][0]
+    assert operation["kind"] == "write"
+    assert len(operation["original_findings"]) == 2
+    assert operation["content"] == (
+        "participant_id\tage\tsex\tnote\r\n"
+        "sub-01\tn/a\tn/a\tN/A text\r\n"
+        "sub-02\t30\tF\tNA\r\n"
+    )
+
+    result = apply_bids_repair(plan)
+
+    assert participants.read_bytes() == operation["content"].encode("utf-8")
+    assert result["applied"][0]["code"] == "REPAIRED_MISSING_VALUES"
+    assert len(result["backups"]) == 1
+
+
+def test_wrong_type_values_that_are_not_missing_markers_stay_blocking(tmp_path):
+    root = _make_dataset(tmp_path)
+    participants = root / "participants.tsv"
+    participants.write_text("participant_id\tage\nsub-01\tunknown\n", encoding="utf-8")
+    report = _report(root, _type_issue(str(participants)))
+
+    with patch(
+        "bids_repair.validation.get_bids_validation_report", return_value=report
+    ):
+        plan = plan_bids_repair(root)
+
+    assert plan["operations"] == []
+    assert plan["blocking"] is True
+    assert "user correction" in plan["findings"][0]["resolution"]
+
+
+def test_real_validator_accepts_normalized_missing_values(tmp_path):
+    root = tmp_path / "real-missing"
+    _make_validator_dataset(root)
+    (root / "participants.tsv").write_text(
+        "participant_id\tage\tsex\nsub-01\tN/A\tN/A\n", encoding="utf-8"
+    )
+
+    original = _run_real_validator(root)["datasets"][0]["issues"]
+    assert any(item["code"] == "TSV_VALUE_INCORRECT_TYPE" for item in original)
+
+    result = validate_and_repair_bids_dataset(root, bids_version="1.9.0")
+
+    assert not any(
+        issue["code"] == "TSV_VALUE_INCORRECT_TYPE"
+        for issue in result["datasets"][0]["issues"]
+    )
+    assert (root / "participants.tsv").read_text(encoding="utf-8") == (
+        "participant_id\tage\tsex\nsub-01\tn/a\tn/a\n"
+    )

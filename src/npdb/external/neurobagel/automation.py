@@ -37,6 +37,7 @@ class NBAnnotationToolBrowserSession:
     """
 
     ANNOTATION_URL = "https://annotate.neurobagel.org"
+    GET_STARTED_TIMEOUT_MS = 30000
 
     def __init__(
         self,
@@ -156,15 +157,17 @@ class NBAnnotationToolBrowserSession:
             "//button[contains(text(), 'Get Started')]",
         ]
 
+        # Once the button exists, allow a slow first page render (cold browser
+        # start, hydration) to settle before giving up on it.
+        click_timeout = min(self.timeout, self.GET_STARTED_TIMEOUT_MS)
+
         last_error = None
         for selector in selectors:
             try:
                 button = self.page.locator(selector)
-                # Check if button exists and is visible
                 if await button.count() > 0:
-                    # 5s to become visible
-                    await button.first.wait_for(timeout=5000)
-                    await button.first.click(timeout=5000)
+                    await button.first.wait_for(timeout=click_timeout)
+                    await button.first.click(timeout=click_timeout)
                     print(f"✓ Clicked 'Get Started' button with selector: {selector}")
                     await asyncio.sleep(1.0)  # Brief wait for page transition
                     return

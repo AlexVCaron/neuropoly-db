@@ -1103,11 +1103,27 @@ def openneuro2bagel(
     cache_dir: Optional[Path] = typer.Option(
         None,
         "--cache-dir",
-        help="Optional local cache. Default is a temp directory for sparse metadata downloads.",
+        help="Optional local cache. OpenNeuro files are staged in the output directory.",
         file_okay=False,
         dir_okay=True,
         writable=True,
         resolve_path=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    tag: Optional[str] = typer.Option(
+        None,
+        "--tag",
+        help="Snapshot version to fetch (for example: 1.0.0). Default: latest snapshot.",
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
+    metadata_only: bool = typer.Option(
+        True,
+        "--metadata-only/--full-download",
+        help=(
+            "Download only metadata (JSON, TSV, README...) and expose imaging files "
+            "as unfetched placeholders, which is all the conversion needs. Pass "
+            "--full-download to fetch the imaging data too."
+        ),
         rich_help_panel=OPTION_GROUP_NAMES["input"],
     ),
     mode: str = typer.Option(
@@ -1209,6 +1225,8 @@ def openneuro2bagel(
         suffix_alias=suffix_alias,
         bids_severity_threshold=bids_severity_threshold,
         cache_dir=cache_dir,
+        tag=tag,
+        metadata_only=metadata_only,
     )
 
 
@@ -1359,6 +1377,16 @@ def figshare2bagel(
         help="Optional Figshare access token. Or set NP_FIGSHARE_TOKEN.",
         rich_help_panel=OPTION_GROUP_NAMES["input"],
     ),
+    cache_dir: Optional[Path] = typer.Option(
+        None,
+        "--cache-dir",
+        help="Optional verified download cache. Or set NP_NPDB_CACHE_DIR.",
+        file_okay=False,
+        dir_okay=True,
+        writable=True,
+        resolve_path=True,
+        rich_help_panel=OPTION_GROUP_NAMES["input"],
+    ),
     mode: str = typer.Option(
         AnnotationMode.MANUAL.value,
         help="Annotation mode: manual|assist|auto|full-auto",
@@ -1458,6 +1486,7 @@ def figshare2bagel(
         bids_version=bids_version,
         suffix_alias=suffix_alias,
         bids_severity_threshold=bids_severity_threshold,
+        cache_dir=cache_dir,
         token=token,
     )
 

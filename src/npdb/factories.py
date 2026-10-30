@@ -133,7 +133,8 @@ class ProviderFactory:
             )
         if provider_name == ProviderName.FIGSHARE:
             return FigshareProvider(
-                token=token or os.environ.get("NP_FIGSHARE_TOKEN")
+                token=token or os.environ.get("NP_FIGSHARE_TOKEN"),
+                cache_dir=cache_dir,
             )
         raise ValueError(
             f"Unsupported provider '{provider}'. Supported providers: {', '.join(item.value for item in ProviderName)}."

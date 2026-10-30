@@ -172,7 +172,8 @@ def test_provider_prepares_extracted_data_before_conversion(tmp_path):
     conversion.assert_called_once()
 
 
-def test_figshare_cli_fetches_and_prepares_inside_output(tmp_path):
+def test_figshare_cli_fetches_and_prepares_inside_output(tmp_path, monkeypatch):
+    monkeypatch.setenv("NP_NPDB_CACHE_DIR", str(tmp_path / "cache"))
     module = importlib.import_module("npdb.cli.cli")
     output = tmp_path / "chosen" / "output"
     dataset = output / "figshare_123"

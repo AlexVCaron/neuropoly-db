@@ -1,3 +1,4 @@
+import hashlib
 import io
 import zipfile
 from unittest.mock import Mock, call, patch
@@ -6,6 +7,13 @@ import httpx
 import pytest
 
 from npdb.providers.figshare import FigshareProvider
+
+
+@pytest.fixture(autouse=True)
+def isolated_cache(monkeypatch, tmp_path_factory):
+    cache = tmp_path_factory.mktemp("figshare-cache")
+    monkeypatch.setenv("NP_NPDB_CACHE_DIR", str(cache))
+    return cache
 
 
 @pytest.fixture
@@ -331,3 +339,102 @@ def test_download_follows_redirects(tmp_path, final_status, download_only):
         download_url,
         storage_url,
     ]
+
+
+def _verified_article(content=b"contents", name="dataset.zip"):
+    return _response(
+        {
+            "files": [
+                {
+                    "id": 7,
+                    "name": name,
+                    "download_url": "file-url",
+                    "size": len(content),
+                    "computed_md5": hashlib.md5(content).hexdigest(),
+                }
+            ]
+        }
+    )
+
+
+def test_verified_download_is_cached_and_reused(
+    tmp_path, isolated_cache, download_only
+):
+    cached = isolated_cache / "figshare" / "12345" / "dataset.zip"
+    with patch(
+        "npdb.providers.figshare.httpx.get",
+        side_effect=[_verified_article(), _response(content=b"contents")],
+    ):
+        FigshareProvider().fetch("12345", tmp_path / "first")
+
+    assert cached.read_bytes() == b"contents"
+    with patch(
+        "npdb.providers.figshare.httpx.get", side_effect=[_verified_article()]
+    ) as get:
+        result = FigshareProvider().fetch("12345", tmp_path / "second")
+
+    assert get.call_count == 1
+    assert (result / "dataset.zip").read_bytes() == b"contents"
+
+
+def test_explicit_cache_dir_takes_precedence(tmp_path, download_only):
+    cache = tmp_path / "explicit-cache"
+    with patch(
+        "npdb.providers.figshare.httpx.get",
+        side_effect=[_verified_article(), _response(content=b"contents")],
+    ):
+        FigshareProvider(cache_dir=cache).fetch("12345", tmp_path / "out")
+
+    assert (cache / "figshare" / "12345" / "dataset.zip").is_file()
+
+
+def test_corrupt_cache_entry_is_downloaded_again(
+    tmp_path, isolated_cache, download_only
+):
+    cached = isolated_cache / "figshare" / "12345" / "dataset.zip"
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"corrupt!")
+
+    with patch(
+        "npdb.providers.figshare.httpx.get",
+        side_effect=[_verified_article(), _response(content=b"contents")],
+    ) as get:
+        result = FigshareProvider().fetch("12345", tmp_path / "out")
+
+    assert get.call_count == 2
+    assert cached.read_bytes() == b"contents"
+    assert (result / "dataset.zip").read_bytes() == b"contents"
+
+
+def test_checksum_mismatch_is_rejected(tmp_path, isolated_cache, download_only):
+    with (
+        patch(
+            "npdb.providers.figshare.httpx.get",
+            side_effect=[_verified_article(), _response(content=b"tampered")],
+        ),
+        pytest.raises(ValueError, match="integrity mismatch"),
+    ):
+        FigshareProvider().fetch("12345", tmp_path / "out")
+
+    assert not (isolated_cache / "figshare" / "12345" / "dataset.zip").exists()
+    assert not (tmp_path / "out" / "dataset.zip").exists()
+    assert not list((isolated_cache / "figshare" / "12345").iterdir())
+
+
+def test_cache_inside_output_is_rejected(tmp_path):
+    with pytest.raises(ValueError, match="must not overlap"):
+        FigshareProvider(cache_dir=tmp_path / "out" / "cache").fetch(
+            "12345", tmp_path / "out"
+        )
+
+
+@pytest.mark.parametrize("name", ["../escape.zip", "nested/file.zip", ".."])
+def test_unsafe_file_names_are_rejected(tmp_path, name):
+    with (
+        patch(
+            "npdb.providers.figshare.httpx.get",
+            return_value=_verified_article(name=name),
+        ),
+        pytest.raises(ValueError, match="Unsafe Figshare file name"),
+    ):
+        FigshareProvider().fetch("12345", tmp_path / "out")
